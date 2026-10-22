@@ -1,11 +1,10 @@
 # Steampunk Writer – máy viết tên cho TikTok LIVE
 
-App Electron chạy độc lập trên Windows, gồm 3 cửa sổ:
+App Electron chạy độc lập trên Windows, gồm 2 cửa sổ (từ v1.1.0 video phát trong khung nằm trong màn hiển thị):
 
 | Cửa sổ | Dùng để |
 |---|---|
 | **Steampunk Writer - Display** (9:16) | Cảnh 3D máy viết. Thêm vào LIVE Studio bằng *Window capture* |
-| **Steampunk Writer - Video** | Popup phát video idle / chào / cảm ơn. Kéo phần giữa để di chuyển, kéo mép để đổi cỡ |
 | **Bảng điều khiển** | Cài đặt mọi thứ. Đóng cửa sổ này là tắt cả app |
 
 ## Chạy

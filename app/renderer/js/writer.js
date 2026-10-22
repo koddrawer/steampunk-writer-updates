@@ -1,6 +1,6 @@
 // Bộ lập kế hoạch nét + điều khiển chuyển động ngòi bút (nhấc/hạ bút, di chuyển, kéo giấy).
 import { G } from './machine.js';
-import { layoutText, textToStrokes, strokesLength, sanitize, hasRenderable, loadChain, hatch } from './text.js';
+import { layoutText, textToStrokes, strokesLength, sanitize, hasRenderable, wrapText, sortLTR } from './text.js';
 import { buildBadge, TEMPLATES } from './badge.js';
 
 const LIFT = 0.012;          // nhấc bút 12 mm
@@ -41,29 +41,98 @@ export class Writer {
     if (d > 0) { this.steps.push({ k: 'advance', d }); this.contentHigh -= d; }
   }
 
+  // một dòng chữ trên một hàng mới (giấy cuộn lên 1 dòng)
+  newRow(rowH, cap) {
+    this.advanceFor(rowH, cap * 0.4);
+    this.rowOpen = true; this.rowH = rowH; this.xCur = G.SHEET_X0 + 0.03; this.contentHigh = YTOP;
+  }
+  writeInline(L, cap, c, x) {
+    const base = YTOP - cap * 1.45; const ox = x - L.bbox.x0;
+    const jitter = (Math.random() - 0.5) * cap * 0.06;
+    const nib = (c.nibMm || 1.6) / 1000;
+    const strokes = textToStrokes(L, { nib, fill: c.fill || 'hatch', place: ([px, py]) => [px + ox, py + base + jitter] });
+    this.queueStrokes(strokes, nib, c.speed || 0.35, c.maxSec || 8, null, 'keep');
+  }
+
   async planName(job) {
     const c = this.cfg().writer.names;
     const chain = await this.fonts.chain(c.fontId);
-    let text = sanitize(chain, job.name, c.maxChars || 20);
+    let text = sanitize(chain, job.text || job.name, 160);
     if (!text || !hasRenderable(chain, text)) text = sanitize(chain, job.alt || '', c.maxChars || 20);
     if (!text) return false;
     const cap = (c.sizeCm || 3.5) / 100;
-    const probe = layoutText(chain, 'H', 1); const em = cap / (probe.capHeight || 0.7);
-    let L = layoutText(chain, text, em);
-    const margin = 0.03, gap = em * 0.55, maxW = G.SHEET_W - 2 * margin;
-    if (L.width > maxW) L = layoutText(chain, text, em * maxW / L.width);
+    const probe = layoutText(chain, 'H', 1); let em = cap / (probe.capHeight || 0.7);
+    const margin = 0.03, maxW = G.SHEET_W - 2 * margin;
     const rowH = cap * 2.1;
-    if (!this.rowOpen || this.xCur + L.width > G.SHEET_X1 - margin || Math.abs(this.rowH - rowH) > 1e-4) {
-      this.advanceFor(rowH, cap * 0.4);
-      this.rowOpen = true; this.rowH = rowH; this.xCur = G.SHEET_X0 + margin; this.contentHigh = YTOP;
+    let L = layoutText(chain, text, em);
+    if (L.width <= maxW) {
+      // ngắn: viết nối tiếp trên cùng hàng, hết chỗ thì sang hàng mới
+      const gap = em * 0.55;
+      if (!this.rowOpen || this.xCur + L.width > G.SHEET_X1 - margin || Math.abs(this.rowH - rowH) > 1e-4) this.newRow(rowH, cap);
+      this.writeInline(L, cap, c, this.xCur);
+      this.xCur += L.width + gap;
+      return true;
     }
-    const base = YTOP - cap * 1.45; const ox = this.xCur - L.bbox.x0;
-    const jitter = (Math.random() - 0.5) * cap * 0.06;
-    const strokes = textToStrokes(L, { nib: (c.nibMm || 1.6) / 1000, fill: c.fill || 'hatch', hatchAngle: 0.45,
-      place: ([x, y]) => [x + ox, y + base + jitter] });
-    this.xCur += L.width + gap;
-    this.queueStrokes(strokes, (c.nibMm || 1.6) / 1000, c.speed || 0.35, c.maxSec || 8, null);
+    // dài: ngắt thành nhiều dòng (tối đa 3), mỗi dòng một hàng
+    let lines = wrapText(chain, text, em, maxW);
+    while (lines.length > 3 && em > cap * 0.6) { em *= 0.85; lines = wrapText(chain, text, em, maxW); }
+    const capL = cap * em / (cap / (probe.capHeight || 0.7));
+    for (const ln of lines.slice(0, 4)) {
+      let LL = layoutText(chain, ln, em);
+      if (LL.width > maxW) LL = layoutText(chain, ln, em * maxW / LL.width);
+      this.newRow(capL * 2.1, capL);
+      this.writeInline(LL, capL, c, G.SHEET_X0 + margin);
+    }
+    this.rowOpen = false;
     return true;
+  }
+
+  // câu trích dẫn khi vắng: khối chữ căn giữa, nhiều dòng, tên tác giả bên dưới
+  async planQuote(job) {
+    const c = this.cfg().writer.quotes || {};
+    const chain = await this.fonts.chain(c.fontId);
+    const text = sanitize(chain, job.text, 400); if (!text) return false;
+    const author = job.author ? sanitize(chain, job.author, 60) : '';
+    const probe = layoutText(chain, 'H', 1); const capR = probe.capHeight || 0.7;
+    const avail = YTOP - Y_MIN - 0.02, maxW = G.SHEET_W * ((c.widthPct || 84) / 100);
+    let cap = (c.sizeCm || 5) / 100, acap = (c.authorSizeCm || 2.8) / 100, lines, H;
+    for (let k = 0; k < 12; k++) {
+      lines = wrapText(chain, text, cap / capR, maxW);
+      H = lines.length * cap * 1.9 + (author ? acap * 2.4 : 0) + (c.divider !== false ? 0.035 : 0);
+      if (H <= avail) break; cap *= 0.88; acap *= 0.92;
+    }
+    this.rowOpen = false;
+    this.advanceFor(H, 0.045);
+    this.contentHigh = YTOP;
+    const cx = (G.SHEET_X0 + G.SHEET_X1) / 2;
+    const nib = (c.nibMm || 1.8) / 1000;
+    const all = [];
+    let y = YTOP - cap * 1.35;
+    let blockR = cx;
+    for (const ln of lines) {
+      const L = layoutText(chain, ln, cap / capR); const ox = cx - L.width / 2 - L.bbox.x0 * 0, oy = y;
+      blockR = Math.max(blockR, cx + L.width / 2);
+      all.push(...textToStrokes(L, { nib, fill: c.fill || 'hatch', place: ([px, py]) => [px + ox, py + oy] }));
+      y -= cap * 1.9;
+    }
+    if (author) {
+      const La = layoutText(chain, '— ' + author, acap / capR); const ay = y + cap * 1.9 - cap * 0.55 - acap * 1.6;
+      const ox = blockR - La.width;
+      all.push(...textToStrokes(La, { nib: nib * 0.85, fill: c.fill || 'hatch', place: ([px, py]) => [px + ox, py + ay] }));
+      y = ay - acap * 0.8;
+    }
+    this.queueStrokes(all, nib, c.speed || 0.4, c.maxSec || 35, null, 'keep');
+    if (c.divider !== false) {
+      const dy = y + cap * 1.9 - cap * 0.6 - 0.02; const w = Math.min(0.18, maxW * 0.25);
+      const dia = [[cx - 0.008, dy], [cx, dy + 0.006], [cx + 0.008, dy], [cx, dy - 0.006], [cx - 0.008, dy]];
+      this.queueStrokes([[[cx - w, dy], [cx - 0.014, dy]], dia, [[cx + 0.014, dy], [cx + w, dy]]], nib * 0.7, c.speed || 0.4, 0, null, 'keep');
+    }
+    return true;
+  }
+
+  abort() {
+    if (!this.busy) return;
+    this.steps = this.steps.filter(s => s.k === 'call').concat([{ k: 'done' }]);
   }
 
   async planDonor(job) {
@@ -89,8 +158,8 @@ export class Writer {
       const tpl = bg && TEMPLATES[bg.template] ? bg.template : 'seal';
       const b = buildBadge(tpl, { W, H, chains: { name: nameChain, deco: decoChain }, name,
         top: fill(bg?.top ?? c.topText), bottom: fill(bg?.bottom ?? c.bottomText), small: fill(bg?.small ?? c.smallText), nibName, nibDeco });
-      this.queueStrokes(b.deco.map(s => s.map(place)), nibDeco, c.decoSpeed || 0.6, (c.maxSec || 30) * 0.55, null);
-      this.queueStrokes(b.names.map(s => s.map(place)), nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null);
+      this.queueStrokes(b.deco.map(s => s.map(place)), nibDeco, c.decoSpeed || 0.6, (c.maxSec || 30) * 0.55, null, 'ltr');
+      this.queueStrokes(b.names.map(s => s.map(place)), nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null, 'keep');
     } else {
       const img = await this.loadInkImage(bg.file, !!bg.keepColors);
       if (img) {
@@ -108,14 +177,14 @@ export class Writer {
         }
         let pat = null;
         const style = () => { if (!pat) pat = this.p.makePattern(img.canvas, x0, yT, w, h); return pat.pat; };
-        this.queueStrokes(rows, nib, c.revealSpeed || 1.2, (c.maxSec || 30) * 0.5, style, false);
+        this.queueStrokes(rows, nib, c.revealSpeed || 1.2, (c.maxSec || 30) * 0.5, style, 'keep');
       }
       const ny = cy + ((bg.nameYOffset ?? 0) / 100) * H;
       const em0 = layoutText(nameChain, name, 1);
       const em = Math.min((W * (bg.nameWidth ?? 70) / 100) / (em0.width || 1), (H * 0.28) / (em0.capHeight || 0.7));
       const L = layoutText(nameChain, name, em); const ox = cx - (L.bbox.x0 + L.bbox.x1) / 2, oy = ny - L.capHeight / 2;
       const strokes = textToStrokes(L, { nib: nibName, fill: 'hatch', place: ([x, y]) => [x + ox, y + oy] });
-      this.queueStrokes(strokes, nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null);
+      this.queueStrokes(strokes, nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null, 'keep');
     }
     this.steps.push({ k: 'call', fn: () => this.hooks.onDonorEnd && this.hooks.onDonorEnd() });
     return true;
@@ -165,10 +234,10 @@ export class Writer {
     this.imageCache.set(key, res); return res;
   }
 
-  queueStrokes(strokes, nib, speed, maxSec, style, optimize = true) {
+  queueStrokes(strokes, nib, speed, maxSec, style, order = 'ltr') {
     strokes = strokes.filter(s => s.length > 1).map(s => s.map(([x, y]) => [Math.min(G.SHEET_X1 - 0.004, Math.max(G.SHEET_X0 + 0.004, x)), Math.min(YTOP + 0.02, Math.max(Y_MIN, y))]));
     if (!strokes.length) return;
-    const ordered = optimize ? optimizeOrder(strokes, [this.planPen?.[0] ?? this.pen.x, this.planPen?.[1] ?? this.pen.y]) : strokes;
+    const ordered = order === 'opt' ? optimizeOrder(strokes, [this.planPen?.[0] ?? this.pen.x, this.planPen?.[1] ?? this.pen.y]) : order === 'ltr' ? sortLTR(strokes) : strokes;
     const L = strokesLength(ordered);
     const g = this.cfg().writer;
     const travelK = 2.2;
@@ -181,10 +250,11 @@ export class Writer {
   async start(job) {
     this.job = job; this.busy = true; this.steps = [];
     let ok = false;
-    try { ok = job.type === 'donor' ? await this.planDonor(job) : await this.planName(job); }
+    try { ok = job.type === 'donor' ? await this.planDonor(job) : job.type === 'quote' ? await this.planQuote(job) : await this.planName(job); }
     catch (e) { console.error('plan lỗi', e); }
     if (!ok) { this.busy = false; this.job = null; return false; }
     this.steps.push({ k: 'done' });
+    this.hooks.onJobStart && this.hooks.onJobStart(job);
     return true;
   }
 
@@ -217,11 +287,12 @@ export class Writer {
         if (st.phase === 'lower') { budget = this.zTo(st, G.PAPER_Z + 0.0003, budget, st.zv); if (this.pen.z <= G.PAPER_Z + 0.0003 + 1e-6) { st.phase = 'draw'; st.i = 1; } continue; }
         if (st.phase === 'draw') {
           const style = typeof st.style === 'function' ? st.style() : st.style;
+          if (st.alpha === undefined) st.alpha = st.style ? 1 : 0.8 + Math.random() * 0.2;   // độ đậm mực thay đổi nhẹ giữa các nét
           let dist = budget * st.speed;
           while (dist > 0 && st.i < st.pts.length) {
             const [tx, ty] = st.pts[st.i]; const dx = tx - this.pen.x, dy = ty - this.pen.y; const d = Math.hypot(dx, dy);
-            if (d <= dist) { this.p.drawSeg(this.pen.x, this.pen.y, tx, ty, st.nib, style); this.pen.x = tx; this.pen.y = ty; dist -= d; st.i++; }
-            else { const nx = this.pen.x + dx / d * dist, ny = this.pen.y + dy / d * dist; this.p.drawSeg(this.pen.x, this.pen.y, nx, ny, st.nib, style); this.pen.x = nx; this.pen.y = ny; dist = 0; }
+            if (d <= dist) { this.p.drawSeg(this.pen.x, this.pen.y, tx, ty, st.nib, style, st.alpha); this.pen.x = tx; this.pen.y = ty; dist -= d; st.i++; }
+            else { const nx = this.pen.x + dx / d * dist, ny = this.pen.y + dy / d * dist; this.p.drawSeg(this.pen.x, this.pen.y, nx, ny, st.nib, style, st.alpha); this.pen.x = nx; this.pen.y = ny; dist = 0; }
           }
           budget = dist / st.speed;
           if (st.i >= st.pts.length) this.step = null; else budget = 0;

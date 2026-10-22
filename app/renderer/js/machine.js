@@ -186,9 +186,9 @@ export class Machine {
   // độ dài cung (từ đầu tờ giấy) của điểm y trên bàn viết
   arcAt(y) { return this.aBed0 + (0 - y); }
 
-  attachPaper(paper) {
+  attachPaper(paper, opts = {}) {
     this.paper = paper;
-    const m = paper.material(this.tex.sheetDiffuse, this.tex.normal, this.sheetLen);
+    const m = paper.material(this.tex.sheetDiffuse, this.tex.normal, this.sheetLen, opts);
     this.sheet = new THREE.Mesh(this.sheetGeo, m);
     this.sheet.receiveShadow = true; this.sheet.castShadow = false;
     this.root.add(this.sheet);

@@ -27,7 +27,7 @@ class TikTok {
     conn.on(E.CHAT || 'chat', d => { const u = this.user(d); this.on.log('chat', `${u.nickname || u.uniqueId}: ${d.comment}`); this.on.chat(u, d.comment); });
     conn.on(E.FOLLOW || 'follow', d => { const u = this.user(d); this.on.log('follow', `${u.nickname || u.uniqueId} theo dõi`); this.on.follow(u); });
     conn.on(E.SHARE || 'share', d => { const u = this.user(d); this.on.share(u); });
-    conn.on(E.LIKE || 'like', d => { const u = this.user(d); this.on.like(u); });
+    conn.on(E.LIKE || 'like', d => { const u = this.user(d); this.on.like(u, d.likeCount || d.count || 1); });
     conn.on(E.ROOM_USER || 'roomUser', d => { if (d.viewerCount != null) this.set({ viewers: d.viewerCount }); });
     conn.on(E.GIFT || 'gift', d => {
       const det = d.giftDetails || {}; const ext = d.extendedGiftInfo || {};

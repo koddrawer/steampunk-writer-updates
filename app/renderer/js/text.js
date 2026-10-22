@@ -161,15 +161,50 @@ export function simplify(pts, minD) {
  * Chuyển chữ đã dàn thành nét vẽ cho bút (theo thứ tự từng chữ cái: tô trước, viền sau).
  * place: (x,y) -> [X,Y] biến đổi sang toạ độ đích.
  */
-export function textToStrokes(layout, { nib, fill = 'hatch', hatchAngle = 0.5, place }) {
+// Góc quét tô mặc định: gần thẳng đứng, hơi nghiêng theo chữ -> ngòi bút quét lần lượt từ TRÁI sang PHẢI
+export const LTR_HATCH = -(Math.PI / 2 - 0.22);
+
+// đưa điểm bắt đầu của đường viền khép kín về điểm trái nhất
+function startLeft(c) {
+  const closed = c.length > 2 && Math.hypot(c[0][0] - c[c.length - 1][0], c[0][1] - c[c.length - 1][1]) < 1e-6;
+  if (!closed) return c[0][0] <= c[c.length - 1][0] ? c : c.slice().reverse();
+  let k = 0; for (let i = 1; i < c.length - 1; i++) if (c[i][0] < c[k][0]) k = i;
+  const body = c.slice(0, -1); const r = body.slice(k).concat(body.slice(0, k)); r.push(r[0]); return r;
+}
+const minX = (c) => c.reduce((m, p) => Math.min(m, p[0]), Infinity);
+
+/**
+ * Chuyển chữ đã dàn thành nét vẽ cho bút, đi lần lượt từ trái sang phải:
+ * từng chữ cái theo thứ tự, trong mỗi chữ tô (quét trái->phải) rồi viền (viền trái trước).
+ * place: (x,y) -> [X,Y] biến đổi sang toạ độ đích.
+ */
+export function textToStrokes(layout, { nib, fill = 'hatch', hatchAngle = LTR_HATCH, place }) {
   const strokes = [];
   const sp = nib * 0.8;
   for (const g of layout.glyphs) {
     const cs = g.contours.map(c => simplify(c, nib * 0.25));
     if (fill === 'hatch') for (const h of hatch(cs, sp, hatchAngle)) strokes.push(h.map(p => place(p)));
-    for (const c of cs) strokes.push(c.map(p => place(p)));
+    for (const c of cs.slice().sort((a, b) => minX(a) - minX(b))) strokes.push(startLeft(c).map(p => place(p)));
   }
   return strokes;
+}
+
+// sắp nét theo thứ tự trái -> phải (dùng cho nét trang trí của logo)
+export function sortLTR(strokes) {
+  return strokes.map(startLeft).sort((a, b) => minX(a) - minX(b));
+}
+
+// Ngắt dòng theo bề rộng tối đa (mét) – trả về mảng dòng
+export function wrapText(chain, text, em, maxW) {
+  const words = text.split(/\s+/).filter(Boolean); const lines = []; let cur = '';
+  const w = (t) => layoutText(chain, t, em).width;
+  for (const wd of words) {
+    const t = cur ? cur + ' ' + wd : wd;
+    if (!cur || w(t) <= maxW) cur = t;
+    else { lines.push(cur); cur = wd; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 export function strokesLength(strokes) {

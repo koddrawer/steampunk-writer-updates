@@ -34,6 +34,13 @@ module.exports = async function start(ctx) {
   // luôn có đủ font/mẫu nền tích hợp (kể cả khi bản cập nhật thêm mẫu mới)
   cfg.fonts = [...DEFAULTS.fonts, ...cfg.fonts.filter(f => !f.builtin)];
   for (const b of DEFAULTS.backgrounds) if (!cfg.backgrounds.some(x => x.id === b.id)) cfg.backgrounds.push(b);
+  // nâng cấu hình cũ lên v2 (bản 1.1.0)
+  if ((saved.configVersion || 1) < 2) {
+    cfg.display.frameless = false;                       // cửa sổ hiển thị có khung để kéo/đổi cỡ
+    cfg.video.idle.loop = true;                          // vắng người: phát idle liên tục
+    if (!saved.display || saved.display.bgColor === '#efe9df') cfg.display.bgColor = DEFAULTS.display.bgColor;
+    cfg.configVersion = 2;
+  }
   let saveT = null;
   const save = () => { clearTimeout(saveT); saveT = setTimeout(() => fs.writeFile(cfgFile, JSON.stringify(cfg, null, 1), () => { }), 300); };
   const getCfg = () => cfg;
@@ -96,7 +103,7 @@ module.exports = async function start(ctx) {
     win.loadURL('app://local/renderer/display.html');
     win.once('ready-to-show', () => win.show());
     remember('display', win);
-    win.on('closed', () => { W.display = null; });
+    win.on('closed', () => { W.display = null; video.displayGone(); });
     W.display = win;
   }
   function createPanel() {
@@ -136,7 +143,6 @@ module.exports = async function start(ctx) {
   let popupHiddenByUser = false;
   function applyWindowCfg() {
     if (W.display && !W.display.isDestroyed()) W.display.setAlwaysOnTop(!!cfg.display.alwaysOnTop);
-    if (W.popup && !W.popup.isDestroyed()) W.popup.setAlwaysOnTop(!!cfg.video.alwaysOnTop);
   }
   function broadcast(ch, data) { for (const w of Object.values(W)) if (w && !w.isDestroyed()) w.webContents.send(ch, data); }
   const toPanel = (ch, d) => W.panel && !W.panel.isDestroyed() && W.panel.webContents.send(ch, d);
@@ -147,33 +153,46 @@ module.exports = async function start(ctx) {
   function addLog(kind, text) {
     const e = { t: Date.now(), kind, text }; log.push(e); if (log.length > 300) log.shift(); toPanel('log', e);
   }
+  // lỗi bất ngờ không được làm treo app giữa buổi live: ghi vào nhật ký thay vì hiện hộp thoại
+  if (!process.__swGuard) {
+    process.__swGuard = true;
+    process.on('uncaughtException', (e) => { console.error(e); try { addLog('err', 'Lỗi: ' + (e && e.message || e)); } catch { } });
+    process.on('unhandledRejection', (e) => { console.error(e); try { addLog('err', 'Lỗi: ' + (e && e.message || e)); } catch { } });
+  }
 
-  // ---------------- popup video
+  // ---------------- video: phát trong khung nằm trong màn hiển thị
+  const toDisplay = (ch, d) => W.display && !W.display.isDestroyed() && W.display.webContents.send(ch, d);
   const popupApi = {
-    play(url, opts) { if (!W.popup) return; if (!W.popup.isVisible() && !popupHiddenByUser) W.popup.showInactive(); W.popup.webContents.send('video:play', { url, ...opts }); },
-    stop() { W.popup && W.popup.webContents.send('video:stop', {}); },
-    idle() {
-      if (!W.popup) return;
-      const m = cfg.video.whenNone;
-      if (m === 'hide') W.popup.hide(); else W.popup.webContents.send('video:blank', { mode: m });
-    },
+    play(url, opts) { toDisplay('video:play', { url, ...opts }); },
+    stop() { toDisplay('video:stop', {}); },
+    idle() { toDisplay('video:blank', { mode: cfg.video.whenNone }); },
   };
   const video = new VideoScheduler(getCfg, popupApi, mediaUrl, (s) => toPanel('video:status', s), addLog);
 
   // ---------------- hàng đợi viết
-  const queue = new JobQueue(getCfg, () => { W.display && W.display.webContents.send('job:available', {}); toPanel('queue', queue.snapshot()); });
+  const queue = new JobQueue(getCfg, () => { W.display && W.display.webContents.send('job:available', {}); toPanel('queue', queue.snapshot()); },
+    () => { W.display && W.display.webContents.send('display:cmd', { cmd: 'abortJob' }); });
 
+  const likes = new Map();
   // ---------------- TikTok
-  const tiktok = new TikTok(ctx.require, getCfg, {
+  const tiktokHandlers = {
     status: (s) => toPanel('tiktok:status', s),
     log: addLog,
-    join: (u) => { video.onJoin(u); if (cfg.writer.names.sources.join) queue.addName(u, 'join'); },
-    chat: (u, text) => { if (cfg.writer.names.sources.chat) queue.addName(u, 'chat'); },
+    join: (u) => { video.onJoin(u); queue.activity(); if (cfg.writer.names.sources.join) queue.addName(u, 'join'); },
+    chat: (u, text) => { video.onActivity(); queue.activity(); if (cfg.writer.names.sources.chat) queue.addName(u, 'chat', false, { comment: text }); },
     follow: (u) => { if (cfg.writer.names.sources.follow) queue.addName(u, 'follow'); },
     share: (u) => { if (cfg.writer.names.sources.share) queue.addName(u, 'share'); },
-    like: (u) => { if (cfg.writer.names.sources.like) queue.addName(u, 'like'); },
-    gift: (g) => { video.onGift(g); queue.addDonor(g); },
-  });
+    like: (u, n) => {
+      // cộng dồn tim theo từng người, đủ ngưỡng thì viết tên
+      if (!cfg.writer.names.sources.like) return;
+      const k = (u.uniqueId || u.nickname || '').toLowerCase(); if (!k) return;
+      const need = Math.max(1, cfg.writer.names.likeThreshold || 10);
+      const before = likes.get(k) || 0, after = before + (n || 1); likes.set(k, after);
+      if (Math.floor(after / need) > Math.floor(before / need)) queue.addName(u, 'like', false, { likes: after });
+    },
+    gift: (g) => { video.onGift(g); queue.activity(); queue.addDonor(g); },
+  };
+  const tiktok = new TikTok(ctx.require, getCfg, tiktokHandlers);
 
   // ---------------- IPC
   ipcMain.handle('config:get', () => cfg);
@@ -182,14 +201,13 @@ module.exports = async function start(ctx) {
   ipcMain.on('display:status', (_e, s) => { displayStatus = { ...displayStatus, ...s }; toPanel('display:status', displayStatus); });
   ipcMain.on('display:fps', (_e, f) => { displayStatus.fps = f; toPanel('display:status', displayStatus); });
   ipcMain.on('display:jobDone', (_e, j) => { queue.done(j); });
-  ipcMain.on('display:ready', () => { queue.requeueCurrent(); addLog('sys', 'Màn hiển thị đã sẵn sàng'); });
+  ipcMain.on('display:ready', () => { queue.requeueCurrent(); video.displayReady(); addLog('sys', 'Màn hiển thị đã sẵn sàng'); });
   ipcMain.on('display:camera', (_e, { name, cam }) => {
     const cams = { ...(cfg.display.cameras || {}) }; if (cam) cams[name] = cam; else delete cams[name];
     setCfg({ display: { cameras: cams } }); addLog('sys', cam ? `Đã lưu góc camera "${name}"` : `Đã đặt lại camera "${name}"`);
   });
   ipcMain.on('video:ended', (_e, info) => video.ended(info));
   ipcMain.on('video:error', (_e, info) => { addLog('err', 'Lỗi phát video: ' + (info && info.url ? decodeURIComponent(info.url.split('/').pop()) : '')); video.ended(info); });
-  ipcMain.on('popup:hide', () => { W.popup && W.popup.hide(); popupHiddenByUser = true; });
 
   const copyInto = (src, dir) => {
     const base = path.basename(src).replace(/[^\w.\-]+/g, '_'); let dst = path.join(dir, base); let i = 1;
@@ -205,9 +223,12 @@ module.exports = async function start(ctx) {
     'queue:remove': (id) => queue.remove(id),
     'queue:clear': (which) => queue.clear(which),
     'queue:pause': (v) => queue.setPaused(v),
-    'test:join': (name) => { const u = { uniqueId: 'test_' + Math.random().toString(36).slice(2, 7), nickname: name || 'Khách ' + Math.floor(Math.random() * 999) }; addLog('join', `[TEST] ${u.nickname} vào phòng`); video.onJoin(u); queue.addName(u, 'join', true); },
+    'test:join': (name) => { const u = { uniqueId: 'test_' + Math.random().toString(36).slice(2, 7), nickname: name || 'Khách ' + Math.floor(Math.random() * 999) }; addLog('join', `[TEST] ${u.nickname} vào phòng`); video.onJoin(u); queue.activity(); queue.addName(u, 'join', true); },
+    'test:chat': (name, text) => { const u = { uniqueId: 'test_' + (name || 'chat').replace(/\s/g, ''), nickname: name || 'Người bình luận' }; addLog('chat', `[TEST] ${u.nickname}: ${text}`); video.onActivity(); queue.activity(); queue.addName(u, 'chat', true, { comment: text || '' }); },
+    'test:like': (name, n) => { const u = { uniqueId: 'test_' + (name || 'like').replace(/\s/g, ''), nickname: name || 'Người thả tim' }; addLog('like', `[TEST] ${u.nickname} thả ${n || 10} tim`); queue.activity(); tiktokHandlers.like(u, n || 10); },
+    'test:quote': () => queue.forceQuote(),
     'test:gift': (o = {}) => { const g = { user: { uniqueId: 'test_' + (o.name || 'donor').replace(/\s/g, ''), nickname: o.name || 'Người tặng quà' }, gift: o.gift || 'Rose', count: o.count || 1, diamonds: o.diamonds ?? 1 };
-      addLog('gift', `[TEST] ${g.user.nickname} tặng ${g.gift} x${g.count} (${g.diamonds * g.count} xu)`); video.onGift(g); queue.addDonor(g, true); },
+      addLog('gift', `[TEST] ${g.user.nickname} tặng ${g.gift} x${g.count} (${g.diamonds * g.count} xu)`); video.onGift(g); queue.activity(); queue.addDonor(g, true); },
     'tiktok:connect': (u) => tiktok.connect(u),
     'tiktok:disconnect': () => tiktok.disconnect(),
     'tiktok:status': () => tiktok.status,
@@ -218,11 +239,11 @@ module.exports = async function start(ctx) {
     'video:pause': (v) => video.setPaused(v),
     'win:show': (name) => {
       if (name === 'display') { if (!W.display) createDisplay(); else { W.display.show(); W.display.focus(); } }
-      if (name === 'popup') { popupHiddenByUser = false; W.popup.show(); }
+      if (name === 'popup') setCfg({ video: { editFrame: !cfg.video.editFrame } });
     },
     'win:displaySize': (w, h) => { if (!W.display) return; W.display.setAspectRatio(0); W.display.setContentSize(w, h); W.display.setAspectRatio(9 / 16); setCfg({ display: { width: w, height: h } }, { silent: true }); },
     'win:recreateDisplay': () => { if (W.display) { W.display.destroy(); W.display = null; } createDisplay(); },
-    'win:popupReset': () => { if (!W.popup) return; W.popup.setBounds({ x: 80, y: 80, width: 360, height: 640 }); W.popup.show(); popupHiddenByUser = false; },
+    'win:popupReset': () => setCfg({ display: { videoBox: { ...DEFAULTS.display.videoBox } } }),
     'display:cmd': (m) => W.display && W.display.webContents.send('display:cmd', m),
     'files:pick': async (kind, multi) => {
       const filters = { video: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'm4v', 'mkv'] }], font: [{ name: 'Font', extensions: ['ttf', 'otf', 'woff'] }],
@@ -272,7 +293,6 @@ module.exports = async function start(ctx) {
 
   createPanel();
   createDisplay();
-  createPopup();
   addLog('sys', `Khởi động v${ctx.appVersion} (${ctx.appSource === 'update' ? 'bản cập nhật' : 'bản cài'})`);
   if (cfg.tiktok.autoConnect && cfg.tiktok.username) setTimeout(() => tiktok.connect(cfg.tiktok.username), 1500);
   if (cfg.update.autoCheck) setTimeout(() => ctx.updater.check(false), 6000);

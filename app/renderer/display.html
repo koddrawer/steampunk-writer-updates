@@ -14,11 +14,24 @@
   #bar i { display: block; height: 100%; width: 0; background: #d9b36c; transition: width .2s; }
   #err { position: fixed; left: 8px; bottom: 8px; right: 8px; color: #ff8a7a; font: 12px monospace; white-space: pre-wrap; }
   body.drag #c { -webkit-app-region: drag; }
+  #vig { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 78% 70% at 50% 46%, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 82%, rgba(0,0,0,.9) 100%); }
+  #vbox { position: fixed; background: #000; display: none; touch-action: none; cursor: move; user-select: none; box-sizing: border-box; }
+  #vbox.on { display: block; }
+  #vbox video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+  #vbox:hover, #vbox.edit { outline: 2px dashed #e8c98a; outline-offset: -2px; }
+  #vbox .lbl { position: absolute; inset: 0; display: none; place-items: center; text-align: center; color: #e8c98a; font: 600 13px/1.4 system-ui, sans-serif; padding: 10px; pointer-events: none; }
+  #vbox.edit.empty .lbl { display: grid; }
+  #vbox .h { position: absolute; width: 18px; height: 18px; background: #e8c98a; opacity: 0; border-radius: 3px; }
+  #vbox:hover .h, #vbox.edit .h { opacity: .9; }
+  #vbox .h.tl { left: -2px; top: -2px; cursor: nwse-resize; } #vbox .h.tr { right: -2px; top: -2px; cursor: nesw-resize; }
+  #vbox .h.bl { left: -2px; bottom: -2px; cursor: nesw-resize; } #vbox .h.br { right: -2px; bottom: -2px; cursor: nwse-resize; }
 </style>
 <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="vig"></div>
+<div id="vbox" class="empty"><video id="vid" playsinline></video><div class="lbl">KHUNG VIDEO<br>Kéo để di chuyển · kéo góc để đổi cỡ</div><i class="h tl" data-h="tl"></i><i class="h tr" data-h="tr"></i><i class="h bl" data-h="bl"></i><i class="h br" data-h="br"></i></div>
 <div id="loading"><div>ĐANG KHỞI ĐỘNG MÁY VIẾT…<div id="bar"><i></i></div></div></div>
 <div id="err"></div>
 <script type="module" src="./js/display.js"></script>

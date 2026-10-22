@@ -7,7 +7,7 @@ const PRIORITY = { idle: 0, greet: 1, thanks: 2 };
 class VideoScheduler {
   constructor(getCfg, popup, mediaUrl, onStatus, log) {
     Object.assign(this, { cfg: getCfg, popup, mediaUrl, onStatus, log });
-    this.cur = null; this.paused = false;
+    this.cur = null; this.paused = false; this.displayOk = false;
     this.lastPlay = { idle: 0, greet: 0, thanks: 0 };
     this.lastIdleEnd = 0; this.lastActivity = Date.now();
     this.pending = { greet: 0, thanks: 0 }; this.pendingSince = { greet: 0, thanks: 0 };
@@ -16,8 +16,12 @@ class VideoScheduler {
     this.timer = setInterval(() => this.tick(), 400);
   }
   kick() { this.tick(); }
+  // màn hiển thị (nơi chứa khung video) vừa tải xong / bị đóng
+  displayReady() { this.displayOk = true; this.cur = null; this.tick(); }
+  displayGone() { this.displayOk = false; this.cur = null; this.emit(); }
   setPaused(v) { this.paused = !!v; if (this.paused) this.stopNow(); this.emit(); }
 
+  onActivity() { this.lastActivity = Date.now(); }
   onJoin() {
     this.lastActivity = Date.now();
     if (!this.pending.greet) this.pendingSince.greet = Date.now();
@@ -60,6 +64,7 @@ class VideoScheduler {
   }
   tryPlay(cat, interrupt) {
     const v = this.cfg().video;
+    if (!this.displayOk) return false;
     if (cat !== 'idle') {
       const chance = v[cat].chance ?? 100;
       this.pending[cat] = 0;
@@ -86,6 +91,7 @@ class VideoScheduler {
     if (!this.cur) this.popup.idle();
   }
   playNow(cat, file) {
+    if (!this.displayOk) return false;
     file = file || this.pick(cat); if (!file) return false;
     if (cat !== 'idle') this.pending[cat] = 0;
     this.play(cat, file); return true;
@@ -97,7 +103,7 @@ class VideoScheduler {
     if (this.cur && now - this.cur.t > 15 * 60000) { this.cur = null; }           // chống treo
     // quà/chào chờ quá lâu thì bỏ (tránh phát muộn khi đã hết người)
     for (const c of ['greet', 'thanks']) if (this.pending[c] && now - this.pendingSince[c] > Math.max(120000, (v[c].cooldownSec || 0) * 2000)) this.pending[c] = 0;
-    if (this.paused || this.cur) return this.emit(true);
+    if (!this.displayOk || this.paused || this.cur) return this.emit(true);
     if (this.pending.thanks && this.ready('thanks')) { if (this.tryPlay('thanks')) return; }
     if (this.pending.greet >= (v.greet.minJoins || 1) && this.ready('greet')) { if (this.tryPlay('greet')) return; }
     const quiet = now - this.lastActivity >= (v.idle.afterSec ?? 25) * 1000;

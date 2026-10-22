@@ -1,1 +1,6 @@
-{ "version": "1.0.0", "minShell": "1.0.0", "notes": "Bản đầu tiên" }
+{
+  "version": "1.1.0",
+  "minShell": "1.0.0",
+  "notes": "Khung cửa sổ hiển thị kéo/đổi cỡ được; viết tên theo số tim; nội dung viết kèm tên; tự viết quote khi vắng + góc camera chờ; bút viết trái→phải; ánh sáng điện ảnh; giấy có vân; video phát trong khung của màn hiển thị; idle phát liên tục khi vắng",
+  "date": "2026-10-23"
+}

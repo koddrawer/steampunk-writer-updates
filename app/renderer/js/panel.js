@@ -42,6 +42,14 @@ function field(path, label, type = 'number', o = {}) {
     r.onchange = () => setPath(path, +r.value);
     input = h('div', { class: 'ctl' }, r, out);
     binds.push(() => { if (document.activeElement !== r) { r.value = get(path) ?? 0; out.textContent = (get(path) ?? 0) + (o.unit || ''); } });
+  } else if (type === 'textarea' || type === 'lines') {
+    const ta = h('textarea', { rows: o.rows || 3, placeholder: o.ph || '', style: 'resize:vertical;font-size:13px' });
+    const val = () => { const v = get(path); return type === 'lines' ? (v || []).join('\n') : (v ?? ''); };
+    ta.value = val();
+    ta.onchange = () => setPath(path, type === 'lines' ? ta.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean) : ta.value);
+    binds.push(() => { if (document.activeElement !== ta) ta.value = val(); });
+    if (o.full) return h('div', { style: 'padding:5px 0' }, h('label', { class: 'hint', style: 'display:block;margin-bottom:4px' }, label), ta);
+    input = ta;
   } else if (type === 'color') {
     const c = h('input', { type: 'color' }); c.value = cur || '#000000'; c.onchange = () => setPath(path, c.value);
     input = c; binds.push(() => { c.value = get(path) || '#000000'; });
@@ -81,6 +89,7 @@ function renderHome() {
   const paused = h('input', { type: 'checkbox' }); paused.onchange = () => api.invoke('queue:pause', paused.checked); live.pausedCb = paused;
   const vpaused = h('input', { type: 'checkbox' }); vpaused.onchange = () => api.invoke('video:pause', vpaused.checked); live.vpausedCb = vpaused;
   const tname = h('input', { type: 'text', placeholder: 'Tên thử' });
+  const cmt = h('input', { type: 'text', placeholder: 'Nội dung bình luận', value: 'Máy đẹp quá!' });
   const gname = h('input', { type: 'text', placeholder: 'Tên người tặng' });
   const gift = h('input', { type: 'text', placeholder: 'Rose', value: 'Rose' });
   const gcount = h('input', { type: 'number', value: 1, min: 1 }); const gcoin = h('input', { type: 'number', value: 1, min: 0 });
@@ -96,7 +105,7 @@ function renderHome() {
     card('Trạng thái', live.kpi, live.writing,
       h('div', { class: 'row' }, h('label', {}, 'Tạm dừng máy viết'), h('label', { class: 'switch' }, paused, h('span'))),
       h('div', { class: 'row' }, h('label', {}, 'Tạm dừng video popup'), h('label', { class: 'switch' }, vpaused, h('span'))),
-      h('div', { class: 'btns' }, btn('Hiện màn hiển thị', () => api.invoke('win:show', 'display')), btn('Hiện popup video', () => api.invoke('win:show', 'popup')),
+      h('div', { class: 'btns' }, btn('Hiện màn hiển thị', () => api.invoke('win:show', 'display')), btn('Bật/tắt khung chỉnh video', () => api.invoke('win:show', 'popup')),
         btn('Xoá trắng giấy', () => api.invoke('paper:clear')), btn('Tải lại màn hiển thị', () => api.invoke('win:recreateDisplay')))),
     card(['Thử nghiệm', h('small', {}, 'không cần live')],
       note('Giả lập sự kiện để kiểm tra máy viết và video.'),
@@ -105,7 +114,9 @@ function renderHome() {
       h('div', { class: 'row' }, h('label', {}, 'Quà × số lượng'), h('div', { class: 'ctl' }, gift, gcount)),
       h('div', { class: 'row' }, h('label', {}, 'Giá 1 quà (xu)'), gcoin),
       h('div', { class: 'btns' }, btn('Gửi quà thử', () => api.invoke('test:gift', { name: gname.value.trim() || undefined, gift: gift.value || 'Rose', count: +gcount.value || 1, diamonds: +gcoin.value }), 'pri'),
-        btn('10 người vào', () => { for (let i = 0; i < 10; i++) setTimeout(() => api.invoke('test:join'), i * 150); }))),
+        btn('10 người vào', () => { for (let i = 0; i < 10; i++) setTimeout(() => api.invoke('test:join'), i * 150); })),
+      h('div', { class: 'row' }, h('label', {}, 'Bình luận thử'), h('div', { class: 'ctl' }, cmt, btn('Gửi', () => api.invoke('test:chat', tname.value.trim() || undefined, cmt.value), 'sm'))),
+      h('div', { class: 'btns' }, btn('Thả 10 tim', () => api.invoke('test:like', tname.value.trim() || undefined, 10)), btn('Viết 1 câu quote ngay', () => api.invoke('test:quote')))),
     card('Nhật ký sự kiện', live.log),
   ));
   api.invoke('log:get').then(l => l.forEach(addLog));
@@ -140,6 +151,7 @@ function renderNames() {
       field('writer.names.sources.follow', 'Người theo dõi', 'bool'),
       field('writer.names.sources.share', 'Người chia sẻ', 'bool'),
       field('writer.names.sources.like', 'Người thả tim', 'bool'),
+      field('writer.names.likeThreshold', 'Số tim để được viết tên', 'number', { unit: 'tim', min: 1, tip: 'Cộng dồn tim của từng người; mỗi lần đủ số này thì viết tên 1 lần (vẫn theo giới hạn "không viết lại")' }),
       field('writer.names.display', 'Hiển thị', 'select', { options: [['nickname', 'Tên hiển thị (nickname)'], ['uniqueId', 'ID (@username)']] }),
       field('writer.names.dedupeMin', 'Không viết lại cùng người trong', 'number', { unit: 'phút', min: 0 }),
       field('writer.names.maxQueue', 'Hàng chờ tối đa', 'number', { unit: 'tên', min: 1, tip: 'Khi quá đông, bỏ người vào sớm nhất' }),
@@ -153,6 +165,13 @@ function renderNames() {
       field('writer.names.maxChars', 'Số ký tự tối đa', 'number', { min: 4, max: 40 }),
       field('writer.names.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
       field('writer.names.maxSec', 'Thời gian tối đa / tên', 'number', { unit: 'giây', min: 0, tip: 'Máy tự tăng tốc nếu tên dài (0 = không giới hạn)' })),
+    card(['Nội dung viết kèm tên', h('small', {}, 'mỗi dòng = 1 mẫu, chọn ngẫu nhiên')],
+      note('Mã thay thế: {name} tên · {comment} nội dung bình luận · {likes} số tim. Ví dụ: "Chào {name}!" hoặc "{name}: {comment}". Câu dài tự xuống dòng (tối đa 3 dòng).'),
+      field('writer.names.templates.join', 'Người vào phòng', 'textarea', { full: true, rows: 2 }),
+      field('writer.names.templates.chat', 'Người bình luận', 'textarea', { full: true, rows: 2 }),
+      field('writer.names.templates.like', 'Người thả tim', 'textarea', { full: true, rows: 2 }),
+      field('writer.names.templates.follow', 'Người theo dõi', 'textarea', { full: true, rows: 2 }),
+      field('writer.names.templates.share', 'Người chia sẻ', 'textarea', { full: true, rows: 2 })),
     card(['Hàng chờ tên', h('small', {}, 'bấm × để bỏ')], live.qNames, h('div', { class: 'btns' }, btn('Xoá hàng chờ tên', () => api.invoke('queue:clear', 'names'), 'red'))),
   ));
 }
@@ -260,18 +279,19 @@ function renderVideo() {
   };
   $('#tab-video').replaceChildren(
     h('div', { class: 'grid', style: 'margin-bottom:14px' },
-      card('Popup video', live.vstat,
-        field('video.whenNone', 'Khi không có video', 'select', { options: [['hide', 'Ẩn cửa sổ popup'], ['black', 'Màn đen'], ['last', 'Giữ khung hình cuối']] }),
-        field('video.alwaysOnTop', 'Luôn nằm trên cùng', 'bool'),
+      card('Khung video (trong màn hiển thị)', live.vstat,
+        field('video.editFrame', 'Hiện khung để chỉnh vị trí', 'bool', { tip: 'Bật để thấy khung khi chưa có video, kéo thả trong màn hiển thị. Tắt khi live.' }),
+        field('video.whenNone', 'Khi không có video', 'select', { options: [['hide', 'Ẩn khung'], ['black', 'Màn đen'], ['last', 'Giữ khung hình cuối']] }),
+        field('video.boxBg', 'Màu nền khung', 'color'),
         field('video.fit', 'Cách hiển thị', 'select', { options: [['contain', 'Vừa khung (không cắt)'], ['cover', 'Lấp đầy (cắt viền)'], ['fill', 'Kéo giãn']] }),
         field('video.volume', 'Âm lượng', 'range', { min: 0, max: 1, step: 0.05 }),
-        note('Kéo phần giữa popup để di chuyển, kéo mép để đổi kích thước. Vị trí được nhớ cho lần sau.'),
-        h('div', { class: 'btns' }, btn('Hiện popup', () => api.invoke('win:show', 'popup')), btn('Đưa popup về góc màn hình', () => api.invoke('win:popupReset')), btn('Dừng video', () => api.invoke('video:stop'), 'red'))),
+        note('Khung video nằm trong cửa sổ hiển thị máy (không ra ngoài được), nên LIVE Studio chỉ cần bắt 1 cửa sổ. Kéo giữa khung để di chuyển, kéo 4 góc để đổi cỡ; vị trí được nhớ.'),
+        h('div', { class: 'btns' }, btn('Đặt lại vị trí khung', () => api.invoke('win:popupReset')), btn('Dừng video', () => api.invoke('video:stop'), 'red'))),
       card('Ưu tiên', note('Cảm ơn > Chào > Idle. Video chào/cảm ơn có thời gian chờ giữa 2 lần phát; trong lúc chờ, các lượt vào/quà được gộp lại và phát 1 lần khi hết thời gian chờ.'),
         note('"Tỉ lệ phát" cho phép chỉ phát ngẫu nhiên một phần số lần (ví dụ 50% = khoảng một nửa số lần đủ điều kiện).'))),
     h('div', { class: 'cats' },
-      catCard('idle', [field('video.idle.afterSec', 'Coi là vắng sau', 'number', { unit: 'giây không ai vào/donate' }),
-        field('video.idle.gapSec', 'Nghỉ giữa 2 video idle', 'number', { unit: 'giây' }), field('video.idle.loop', 'Phát liên tục khi vắng', 'bool')]),
+      catCard('idle', [field('video.idle.afterSec', 'Coi là vắng sau', 'number', { unit: 'giây không ai vào/bình luận/donate' }),
+        field('video.idle.loop', 'Phát liên tục không tắt khi vắng', 'bool'), field('video.idle.gapSec', 'Nghỉ giữa 2 video idle (khi tắt liên tục)', 'number', { unit: 'giây' })]),
       catCard('greet', [field('video.greet.cooldownSec', 'Tối thiểu giữa 2 lần chào', 'number', { unit: 'giây' }), field('video.greet.minJoins', 'Số người vào để chào', 'number', { unit: 'người', min: 1 }),
         field('video.greet.chance', 'Tỉ lệ phát', 'range', { min: 0, max: 100, step: 5, unit: '%' }), field('video.greet.interruptIdle', 'Ngắt video idle', 'bool')]),
       catCard('thanks', [field('video.thanks.cooldownSec', 'Tối thiểu giữa 2 lần cảm ơn', 'number', { unit: 'giây' }), field('video.thanks.minDiamonds', 'Quà tối thiểu', 'number', { unit: 'xu' }),
@@ -285,6 +305,36 @@ function renderVStat(s) {
   if (live.vstat) live.vstat.textContent = t + `  (đã phát: idle ${s.counts.idle}, chào ${s.counts.greet}, cảm ơn ${s.counts.thanks})`;
   const p = $('#pVid'); p.textContent = 'Video: ' + (s.paused ? 'tạm dừng' : s.cur ? CATV[s.cur.cat] : 'chờ'); p.className = 'pill ' + (s.cur ? 'ok' : '');
   if (live.vpausedCb) live.vpausedCb.checked = !!s.paused;
+}
+
+// ================= TAB: Quote chờ
+function renderQuotes() {
+  const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.quotes.fontId)};white-space:normal;font-size:28px` }, 'Có công mài sắt, có ngày nên kim');
+  binds.push(() => { prev.style.fontFamily = ff(cfg.writer.quotes.fontId); });
+  const cnt = h('span', { class: 'hint' }); const upd = () => { cnt.textContent = `${(cfg.writer.quotes.list || []).length} câu`; }; upd(); binds.push(upd);
+  $('#tab-quotes').replaceChildren(h('div', { class: 'grid' },
+    card('Khi vắng người',
+      note('Khi không có ai vào, bình luận hay tặng quà trong một khoảng thời gian, máy tự viết các câu quote. Có người mới là dừng câu đang viết để viết tên.'),
+      field('writer.quotes.enabled', 'Bật viết quote khi vắng', 'bool'),
+      field('writer.quotes.afterSec', 'Coi là vắng sau', 'number', { unit: 'giây', min: 3 }),
+      field('writer.quotes.gapSec', 'Nghỉ giữa 2 câu', 'number', { unit: 'giây', min: 0 }),
+      field('writer.quotes.interrupt', 'Có người mới thì dừng câu đang viết', 'bool'),
+      field('writer.quotes.random', 'Chọn câu ngẫu nhiên', 'bool', { tip: 'Tắt = lần lượt theo danh sách' }),
+      h('div', { class: 'btns' }, btn('Viết 1 câu ngay', () => api.invoke('test:quote'), 'pri'))),
+    card('Kiểu chữ quote', prev,
+      field('writer.quotes.fontId', 'Font', 'select', { options: fontOptions }),
+      field('writer.quotes.sizeCm', 'Chiều cao chữ', 'range', { min: 2.5, max: 10, step: 0.1, unit: ' cm' }),
+      field('writer.quotes.authorSizeCm', 'Chữ tác giả', 'range', { min: 1.5, max: 6, step: 0.1, unit: ' cm' }),
+      field('writer.quotes.widthPct', 'Bề rộng khối chữ', 'range', { min: 40, max: 96, step: 2, unit: '%' }),
+      field('writer.quotes.nibMm', 'Cỡ ngòi', 'range', { min: 0.6, max: 4, step: 0.1, unit: ' mm' }),
+      field('writer.quotes.fill', 'Kiểu nét', 'select', { options: [['hatch', 'Tô đặc'], ['outline', 'Chỉ viền']] }),
+      field('writer.quotes.divider', 'Gạch trang trí dưới câu', 'bool'),
+      field('writer.quotes.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
+      field('writer.quotes.maxSec', 'Thời gian tối đa / câu', 'number', { unit: 'giây' })),
+    card(['Danh sách quote', cnt],
+      note('Mỗi dòng 1 câu. Muốn ghi tác giả thì thêm " — Tên tác giả" ở cuối dòng.'),
+      field('writer.quotes.list', 'Danh sách', 'lines', { full: true, rows: 16 })),
+  ));
 }
 
 // ================= TAB: Font
@@ -307,7 +357,8 @@ function renderDisplay() {
   $('#tab-display').replaceChildren(h('div', { class: 'grid' },
     card('Cửa sổ hiển thị 9:16',
       h('div', { class: 'btns' }, ...[[405, 720], [540, 960], [720, 1280], [1080, 1920]].map(([w, hh]) => btn(`${w}×${hh}`, () => api.invoke('win:displaySize', w, hh), 'sm'))),
-      field('display.frameless', 'Không viền cửa sổ', 'bool', { tip: 'Áp dụng khi tải lại màn hiển thị' }),
+      field('display.frameless', 'Ẩn khung cửa sổ (không viền)', 'bool', { tip: 'Tắt = có khung để kéo di chuyển và đổi cỡ. Áp dụng khi tải lại màn hiển thị' }),
+      note('Trong LIVE Studio dùng Window capture và chọn chỉ lấy phần nội dung (client area) để không dính thanh tiêu đề.'),
       field('display.alwaysOnTop', 'Luôn nằm trên', 'bool'),
       field('display.dragWindow', 'Kéo cửa sổ bằng chuột (tắt xoay camera)', 'bool'),
       field('display.renderScale', 'Độ nét render', 'range', { min: 0.5, max: 2, step: 0.25, unit: '×' }),
@@ -315,13 +366,24 @@ function renderDisplay() {
     card('Camera',
       note('Trong màn hiển thị: chuột trái xoay, chuột phải kéo, lăn để zoom. Chỉnh xong bấm lưu.'),
       h('div', { class: 'btns' }, btn('Lưu góc chính', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'main' }), 'pri'),
-        btn('Lưu góc cận donate', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'donor' }), 'pri')),
+        btn('Lưu góc cận donate', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'donor' }), 'pri'),
+        btn('Lưu góc chờ (quote)', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'quote' }), 'pri')),
       h('div', { class: 'btns' }, btn('Về góc chính', () => api.invoke('display:cmd', { cmd: 'camera', name: 'main' })), btn('Xem góc donate', () => api.invoke('display:cmd', { cmd: 'camera', name: 'donor' })),
-        btn('Mặc định góc chính', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'main' })), btn('Mặc định góc donate', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'donor' }))),
+        btn('Xem góc chờ', () => api.invoke('display:cmd', { cmd: 'camera', name: 'quote' })),
+        btn('Mặc định góc chính', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'main' })), btn('Mặc định góc donate', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'donor' })),
+        btn('Mặc định góc chờ', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'quote' }))),
+      field('display.quoteCam', 'Chuyển góc chờ khi viết quote', 'bool', { tip: 'Lúc vắng người, camera lùi ra để người xem đọc được trọn câu quote' }),
       field('display.mouseCamera', 'Cho phép xoay bằng chuột', 'bool'),
       field('display.followPen', 'Camera bám theo ngòi bút', 'range', { min: 0, max: 100, step: 5, unit: '%' }),
       field('display.donorZoom', 'Tự zoom khi viết donate', 'bool'),
       field('display.donorHoldSec', 'Giữ cận cảnh sau khi xong', 'number', { unit: 'giây' })),
+    card('Ánh sáng',
+      field('display.lighting', 'Kiểu ánh sáng', 'select', { options: [['cinematic', 'Điện ảnh (đèn rọi, nền tối)'], ['studio', 'Studio sáng (nền sáng)']] }),
+      field('display.keyLight', 'Độ mạnh đèn chính', 'range', { min: 0.3, max: 2.5, step: 0.05, unit: '×' }),
+      field('display.bloom', 'Hào quang ánh kim (bloom)', 'range', { min: 0, max: 1.2, step: 0.05 }),
+      field('display.vignette', 'Tối viền (vignette)', 'range', { min: 0, max: 1, step: 0.05 }),
+      field('display.table', 'Mặt bàn tối dưới máy', 'bool'),
+      note('Bloom tốn GPU hơn – máy yếu có thể đặt 0.')),
     card('Cảnh & giấy',
       field('display.bgColor', 'Màu nền', 'color'),
       h('div', { class: 'row' }, h('label', {}, 'Ảnh nền'), h('div', { class: 'ctl' },
@@ -330,6 +392,8 @@ function renderDisplay() {
       field('display.exposure', 'Độ sáng', 'range', { min: 0.5, max: 1.8, step: 0.05 }),
       field('display.floorShadow', 'Bóng đổ nền', 'range', { min: 0, max: 0.8, step: 0.02 }),
       field('writer.paper.inkColor', 'Màu mực', 'color'),
+      field('writer.paper.tint', 'Màu giấy', 'color'),
+      field('writer.paper.grain', 'Độ vân giấy', 'range', { min: 0, max: 1.5, step: 0.05 }),
       field('writer.paper.feedSpeed', 'Tốc độ cuộn giấy', 'range', { min: 0.03, max: 0.4, step: 0.01, unit: ' m/s' }),
       field('writer.maxSpeedup', 'Tăng tốc tối đa khi gấp', 'range', { min: 1, max: 8, step: 0.5, unit: '×' }))));
 }
@@ -352,7 +416,7 @@ function renderUpd(s) { if (!live.upd || !s) return; live.upd.textContent = s.me
 
 // ---------------- khởi tạo
 refreshFontFaces();
-renderHome(); renderNames(); renderDonors(); renderVideo(); renderFonts(); renderDisplay(); renderUpdate();
+renderHome(); renderNames(); renderQuotes(); renderDonors(); renderVideo(); renderFonts(); renderDisplay(); renderUpdate();
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
@@ -369,9 +433,10 @@ function renderTik(s) {
 }
 api.on('tiktok:status', renderTik);
 api.on('display:status', (s) => {
-  const p = $('#pWrite'); p.textContent = 'Máy viết: ' + (s.busy ? (s.job ? `đang viết "${s.job.name}"` : 'đang viết') : 'rảnh') + (s.fps ? ` · ${s.fps} fps` : '');
+  const what = (j) => j.type === 'quote' ? `quote ${j.name}` : `"${j.name}"`;
+  const p = $('#pWrite'); p.textContent = 'Máy viết: ' + (s.busy ? (s.job ? `đang viết ${what(s.job)}` : 'đang viết') : 'rảnh') + (s.fps ? ` · ${s.fps} fps` : '');
   p.className = 'pill ' + (s.busy ? 'ok' : '');
-  if (live.writing) live.writing.textContent = s.busy && s.job ? `Đang viết: ${s.job.name} (${s.job.type === 'donor' ? 'donate' : 'tên'})` : 'Máy viết đang chờ';
+  if (live.writing) live.writing.textContent = s.busy && s.job ? `Đang viết: ${s.job.name} (${({ donor: 'donate', quote: 'quote chờ' })[s.job.type] || 'tên'})` : 'Máy viết đang chờ';
 });
 api.invoke('queue:get').then(renderQueue);
 api.invoke('video:status').then(renderVStat);
