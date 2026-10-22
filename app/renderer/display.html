@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Máy Viết Steampunk – Màn hiển thị</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' app: media: blob: data:; script-src 'self' app: 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' app: media: blob: data:; media-src 'self' app: media: blob:; connect-src 'self' app: media: blob: data:; font-src 'self' app: media: data:">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0b09; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #d9b36c; font: 600 15px/1.4 system-ui, sans-serif;
+    background: radial-gradient(circle at 50% 40%, #2a2017, #0d0b09); transition: opacity .6s; letter-spacing: .04em; }
+  #loading.hide { opacity: 0; pointer-events: none; }
+  #bar { width: 52vw; height: 4px; background: #3a2c1c; margin-top: 12px; border-radius: 2px; overflow: hidden; }
+  #bar i { display: block; height: 100%; width: 0; background: #d9b36c; transition: width .2s; }
+  #err { position: fixed; left: 8px; bottom: 8px; right: 8px; color: #ff8a7a; font: 12px monospace; white-space: pre-wrap; }
+  body.drag #c { -webkit-app-region: drag; }
+</style>
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading"><div>ĐANG KHỞI ĐỘNG MÁY VIẾT…<div id="bar"><i></i></div></div></div>
+<div id="err"></div>
+<script type="module" src="./js/display.js"></script>
+</body>
+</html>

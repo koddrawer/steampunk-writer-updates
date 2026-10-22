@@ -1,0 +1,378 @@
+// Bảng điều khiển
+const api = window.api;
+let cfg = await api.getConfig();
+const $ = (s, r = document) => r.querySelector(s);
+const h = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === 'class') e.className = v; else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+};
+const get = (p, o = cfg) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+const mk = (p, v) => p.split('.').reverse().reduce((acc, k) => ({ [k]: acc }), v);
+const setPath = (p, v) => api.setConfig(mk(p, v));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600); }
+const fname = (p) => (p || '').split(/[\\/]/).pop();
+
+// ---------- trường nhập liệu gắn với đường dẫn cấu hình
+const binds = [];
+function field(path, label, type = 'number', o = {}) {
+  let input;
+  const cur = get(path);
+  if (type === 'bool') {
+    const cb = h('input', { type: 'checkbox' }); cb.checked = !!cur;
+    cb.onchange = () => setPath(path, cb.checked);
+    input = h('label', { class: 'switch' }, cb, h('span'));
+    binds.push(() => { cb.checked = !!get(path); });
+  } else if (type === 'select') {
+    const sel = h('select', {}, ...(typeof o.options === 'function' ? o.options() : o.options).map(([v, t]) => h('option', { value: v }, t)));
+    sel.value = cur ?? ''; sel.onchange = () => setPath(path, o.num ? +sel.value : sel.value);
+    input = sel;
+    binds.push(() => {
+      if (typeof o.options === 'function') { const v = sel.value; sel.replaceChildren(...o.options().map(([a, t]) => h('option', { value: a }, t))); sel.value = get(path) ?? v; }
+      else if (document.activeElement !== sel) sel.value = get(path) ?? '';
+    });
+  } else if (type === 'range') {
+    const r = h('input', { type: 'range', min: o.min ?? 0, max: o.max ?? 100, step: o.step ?? 1 }); r.value = cur ?? 0;
+    const out = h('span', { class: 'unit', style: 'min-width:48px;text-align:right' }, `${cur ?? 0}${o.unit || ''}`);
+    r.oninput = () => { out.textContent = r.value + (o.unit || ''); };
+    r.onchange = () => setPath(path, +r.value);
+    input = h('div', { class: 'ctl' }, r, out);
+    binds.push(() => { if (document.activeElement !== r) { r.value = get(path) ?? 0; out.textContent = (get(path) ?? 0) + (o.unit || ''); } });
+  } else if (type === 'color') {
+    const c = h('input', { type: 'color' }); c.value = cur || '#000000'; c.onchange = () => setPath(path, c.value);
+    input = c; binds.push(() => { c.value = get(path) || '#000000'; });
+  } else {
+    const inp = h('input', { type: type === 'number' ? 'number' : 'text', min: o.min, max: o.max, step: o.step ?? 'any', placeholder: o.ph || '' });
+    inp.value = cur ?? '';
+    inp.onchange = () => setPath(path, type === 'number' ? (inp.value === '' ? 0 : +inp.value) : inp.value);
+    input = h('div', { class: 'ctl' }, inp, o.unit ? h('span', { class: 'unit' }, o.unit) : null);
+    binds.push(() => { if (document.activeElement !== inp) inp.value = get(path) ?? ''; });
+  }
+  return h('div', { class: 'row', title: o.tip || '' }, h('label', {}, label), input);
+}
+const card = (title, ...kids) => h('div', { class: 'card' }, h('h3', {}, ...(Array.isArray(title) ? title : [title])), ...kids);
+const note = (t) => h('p', { class: 'note' }, t);
+const btn = (t, f, cls = '') => h('button', { class: 'b ' + cls, onclick: f }, t);
+const fontOptions = () => cfg.fonts.map(f => [f.id, f.name]);
+
+// ---------- font preview (@font-face)
+function refreshFontFaces() {
+  const css = cfg.fonts.map(f => {
+    const srcs = f.builtin ? f.files.map(x => `url("../assets/fonts/${x}")`) : [`url("${api.mediaUrl(f.file)}")`];
+    return srcs.map(s => `@font-face{font-family:"sw-${f.id}";src:${s};font-display:swap;}`).join('\n');
+  }).join('\n');
+  $('#fontfaces').textContent = css;
+}
+const ff = (id) => `"sw-${id}", serif`;
+
+// ================= TAB: Tổng quan
+const live = {};
+function renderHome() {
+  const user = h('input', { type: 'text', placeholder: 'username TikTok (không cần @)' }); user.value = cfg.tiktok.username || '';
+  user.onchange = () => setPath('tiktok.username', user.value.trim().replace(/^@/, ''));
+  live.tikMsg = h('div', { class: 'hint' }, '—');
+  live.kpi = h('div', { class: 'kpis' });
+  live.log = h('div', { class: 'log' });
+  live.writing = h('div', { class: 'hint' }, '—');
+  const paused = h('input', { type: 'checkbox' }); paused.onchange = () => api.invoke('queue:pause', paused.checked); live.pausedCb = paused;
+  const vpaused = h('input', { type: 'checkbox' }); vpaused.onchange = () => api.invoke('video:pause', vpaused.checked); live.vpausedCb = vpaused;
+  const tname = h('input', { type: 'text', placeholder: 'Tên thử' });
+  const gname = h('input', { type: 'text', placeholder: 'Tên người tặng' });
+  const gift = h('input', { type: 'text', placeholder: 'Rose', value: 'Rose' });
+  const gcount = h('input', { type: 'number', value: 1, min: 1 }); const gcoin = h('input', { type: 'number', value: 1, min: 0 });
+  $('#tab-home').replaceChildren(h('div', { class: 'grid' },
+    card('Kết nối TikTok LIVE',
+      h('div', { class: 'row' }, h('label', {}, 'Username'), user),
+      field('tiktok.autoConnect', 'Tự kết nối khi mở app', 'bool'),
+      field('tiktok.autoReconnect', 'Tự kết nối lại khi rớt', 'bool'),
+      field('tiktok.signApiKey', 'Euler API key (tuỳ chọn)', 'text', { ph: 'để trống nếu không có', tip: 'Khoá ký của eulerstream.com giúp kết nối ổn định hơn' }),
+      h('div', { class: 'btns' }, btn('Kết nối', async () => { await setPath('tiktok.username', user.value.trim().replace(/^@/, '')); api.invoke('tiktok:connect', user.value); }, 'pri'),
+        btn('Ngắt', () => api.invoke('tiktok:disconnect'), 'red')),
+      live.tikMsg),
+    card('Trạng thái', live.kpi, live.writing,
+      h('div', { class: 'row' }, h('label', {}, 'Tạm dừng máy viết'), h('label', { class: 'switch' }, paused, h('span'))),
+      h('div', { class: 'row' }, h('label', {}, 'Tạm dừng video popup'), h('label', { class: 'switch' }, vpaused, h('span'))),
+      h('div', { class: 'btns' }, btn('Hiện màn hiển thị', () => api.invoke('win:show', 'display')), btn('Hiện popup video', () => api.invoke('win:show', 'popup')),
+        btn('Xoá trắng giấy', () => api.invoke('paper:clear')), btn('Tải lại màn hiển thị', () => api.invoke('win:recreateDisplay')))),
+    card(['Thử nghiệm', h('small', {}, 'không cần live')],
+      note('Giả lập sự kiện để kiểm tra máy viết và video.'),
+      h('div', { class: 'row' }, h('label', {}, 'Người vào phòng'), h('div', { class: 'ctl' }, tname, btn('Vào', () => api.invoke('test:join', tname.value.trim() || undefined), 'sm'))),
+      h('div', { class: 'row' }, h('label', {}, 'Người tặng'), gname),
+      h('div', { class: 'row' }, h('label', {}, 'Quà × số lượng'), h('div', { class: 'ctl' }, gift, gcount)),
+      h('div', { class: 'row' }, h('label', {}, 'Giá 1 quà (xu)'), gcoin),
+      h('div', { class: 'btns' }, btn('Gửi quà thử', () => api.invoke('test:gift', { name: gname.value.trim() || undefined, gift: gift.value || 'Rose', count: +gcount.value || 1, diamonds: +gcoin.value }), 'pri'),
+        btn('10 người vào', () => { for (let i = 0; i < 10; i++) setTimeout(() => api.invoke('test:join'), i * 150); }))),
+    card('Nhật ký sự kiện', live.log),
+  ));
+  api.invoke('log:get').then(l => l.forEach(addLog));
+}
+function addLog(e) {
+  if (!live.log) return;
+  const d = new Date(e.t); const tm = d.toLocaleTimeString('vi-VN', { hour12: false });
+  live.log.prepend(h('div', { class: e.kind }, `${tm}  ${e.text}`));
+  while (live.log.childElementCount > 250) live.log.lastChild.remove();
+}
+function renderKpi(q) {
+  if (!live.kpi) return;
+  const s = q.stats || {};
+  live.kpi.replaceChildren(
+    h('div', { class: 'kpi' }, h('small', {}, 'Chờ donate'), h('div', { class: 'big' }, q.donors.length)),
+    h('div', { class: 'kpi' }, h('small', {}, 'Chờ viết tên'), h('div', { class: 'big' }, q.names.length)),
+    h('div', { class: 'kpi' }, h('small', {}, 'Đã viết'), h('div', { class: 'big' }, s.written || 0)),
+    h('div', { class: 'kpi' }, h('small', {}, 'Logo donate'), h('div', { class: 'big' }, s.donors || 0)));
+  if (live.pausedCb) live.pausedCb.checked = !!q.paused;
+}
+
+// ================= TAB: Viết tên
+function renderNames() {
+  live.qNames = h('div', { class: 'list' });
+  const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.names.fontId)}` }, 'Nguyễn Thị Hồng Nhung');
+  binds.push(() => { prev.style.fontFamily = ff(cfg.writer.names.fontId); });
+  $('#tab-names').replaceChildren(h('div', { class: 'grid' },
+    card('Nguồn tên',
+      field('writer.names.enabled', 'Bật viết tên người tham gia', 'bool'),
+      field('writer.names.sources.join', 'Người vào phòng', 'bool'),
+      field('writer.names.sources.chat', 'Người bình luận', 'bool'),
+      field('writer.names.sources.follow', 'Người theo dõi', 'bool'),
+      field('writer.names.sources.share', 'Người chia sẻ', 'bool'),
+      field('writer.names.sources.like', 'Người thả tim', 'bool'),
+      field('writer.names.display', 'Hiển thị', 'select', { options: [['nickname', 'Tên hiển thị (nickname)'], ['uniqueId', 'ID (@username)']] }),
+      field('writer.names.dedupeMin', 'Không viết lại cùng người trong', 'number', { unit: 'phút', min: 0 }),
+      field('writer.names.maxQueue', 'Hàng chờ tối đa', 'number', { unit: 'tên', min: 1, tip: 'Khi quá đông, bỏ người vào sớm nhất' }),
+      field('writer.names.skipWhenDonors', 'Tạm ngưng tên khi còn donate chờ', 'bool')),
+    card('Kiểu chữ tên',
+      prev,
+      field('writer.names.fontId', 'Font', 'select', { options: fontOptions }),
+      field('writer.names.sizeCm', 'Chiều cao chữ', 'range', { min: 2, max: 9, step: 0.1, unit: ' cm' }),
+      field('writer.names.nibMm', 'Cỡ ngòi bút', 'range', { min: 0.6, max: 4, step: 0.1, unit: ' mm' }),
+      field('writer.names.fill', 'Kiểu nét', 'select', { options: [['hatch', 'Tô đặc (bút đi kín nét)'], ['outline', 'Chỉ viền']] }),
+      field('writer.names.maxChars', 'Số ký tự tối đa', 'number', { min: 4, max: 40 }),
+      field('writer.names.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
+      field('writer.names.maxSec', 'Thời gian tối đa / tên', 'number', { unit: 'giây', min: 0, tip: 'Máy tự tăng tốc nếu tên dài (0 = không giới hạn)' })),
+    card(['Hàng chờ tên', h('small', {}, 'bấm × để bỏ')], live.qNames, h('div', { class: 'btns' }, btn('Xoá hàng chờ tên', () => api.invoke('queue:clear', 'names'), 'red'))),
+  ));
+}
+function renderQueue(q) {
+  renderKpi(q);
+  const row = (j) => h('div', { class: 'item' }, h('span', { class: 'tag' }, j.type === 'donor' ? `${j.gift} x${j.count}` : (j.source || 'join')),
+    h('span', { class: 'grow' }, j.name), h('button', { class: 'b sm red', onclick: () => api.invoke('queue:remove', j.id) }, '×'));
+  if (live.qNames) live.qNames.replaceChildren(...(q.names.length ? q.names.map(row) : [h('div', { class: 'hint' }, 'Trống')]));
+  if (live.qDonors) live.qDonors.replaceChildren(...(q.donors.length ? q.donors.map(row) : [h('div', { class: 'hint' }, 'Trống')]));
+}
+
+// ================= TAB: Donate & Logo
+function renderDonors() {
+  live.qDonors = h('div', { class: 'list' });
+  const bgList = h('div', { class: 'list', style: 'max-height:520px' });
+  const draw = () => {
+    bgList.replaceChildren(...cfg.backgrounds.map((b, i) => {
+      const on = h('input', { type: 'checkbox' }); on.checked = b.enabled !== false;
+      on.onchange = () => { const arr = structuredClone(cfg.backgrounds); arr[i].enabled = on.checked; setPath('backgrounds', arr); };
+      const upd = (k, v) => { const arr = structuredClone(cfg.backgrounds); arr[i][k] = v; setPath('backgrounds', arr); };
+      const extra = [];
+      if (b.type === 'image') {
+        const kc = h('input', { type: 'checkbox' }); kc.checked = !!b.keepColors; kc.onchange = () => upd('keepColors', kc.checked);
+        const yo = h('input', { type: 'number', value: b.nameYOffset ?? 0, step: 1, style: 'max-width:70px' }); yo.onchange = () => upd('nameYOffset', +yo.value);
+        const nw = h('input', { type: 'number', value: b.nameWidth ?? 70, step: 1, style: 'max-width:70px' }); nw.onchange = () => upd('nameWidth', +nw.value);
+        extra.push(h('div', { class: 'ctl', style: 'gap:10px;margin-top:6px;flex-wrap:wrap' },
+          h('label', { class: 'hint' }, 'Giữ màu ảnh '), h('label', { class: 'switch' }, kc, h('span')),
+          h('label', { class: 'hint' }, 'Tên lệch dọc %'), yo, h('label', { class: 'hint' }, 'Bề rộng tên %'), nw));
+      } else {
+        const t = (k, ph) => { const x = h('input', { type: 'text', placeholder: ph }); x.value = b[k] ?? ''; x.onchange = () => upd(k, x.value === '' ? undefined : x.value); return x; };
+        extra.push(h('div', { class: 'ctl', style: 'gap:6px;margin-top:6px' }, t('top', 'chữ trên (mặc định)'), t('bottom', 'chữ dưới'), t('small', 'chữ nhỏ')));
+      }
+      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' },
+        h('div', { class: 'ctl' }, h('label', { class: 'switch' }, on, h('span')),
+          b.type === 'image' ? h('img', { class: 'thumb', src: api.mediaUrl(b.file) }) : h('span', { class: 'tag' }, 'mẫu'),
+          h('span', { class: 'grow' }, b.name),
+          b.type === 'image' ? btn('Xoá', () => api.invoke('bg:remove', b.id), 'sm red') : null),
+        ...extra);
+    }));
+  };
+  draw(); binds.push(draw);
+  const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.donors.fontId)};font-size:44px;text-align:center` }, 'Hoàng Thuỳ Linh');
+  const prev2 = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.donors.decoFontId)};font-size:20px;text-align:center;letter-spacing:.12em;margin-top:6px` }, 'THANK YOU · ROSE X5');
+  binds.push(() => { prev.style.fontFamily = ff(cfg.writer.donors.fontId); prev2.style.fontFamily = ff(cfg.writer.donors.decoFontId); });
+  $('#tab-donors').replaceChildren(h('div', { class: 'grid' },
+    card('Điều kiện & hàng chờ',
+      field('writer.donors.enabled', 'Bật viết tên người donate', 'bool'),
+      field('writer.donors.minDiamonds', 'Tổng xu tối thiểu', 'number', { unit: 'xu', min: 0 }),
+      field('writer.donors.mergeSec', 'Gộp quà liên tiếp trong', 'number', { unit: 'giây', min: 0 }),
+      field('writer.donors.display', 'Hiển thị', 'select', { options: [['nickname', 'Tên hiển thị'], ['uniqueId', 'ID (@username)']] }),
+      field('writer.donors.maxQueue', 'Hàng chờ tối đa', 'number', { min: 1 }),
+      h('div', { style: 'margin-top:8px' }, live.qDonors),
+      h('div', { class: 'btns' }, btn('Xoá hàng chờ donate', () => api.invoke('queue:clear', 'donors'), 'red'))),
+    card('Chữ trên logo',
+      prev, prev2,
+      field('writer.donors.fontId', 'Font tên', 'select', { options: fontOptions }),
+      field('writer.donors.decoFontId', 'Font chữ trang trí', 'select', { options: fontOptions }),
+      field('writer.donors.topText', 'Chữ phía trên', 'text'),
+      field('writer.donors.bottomText', 'Chữ phía dưới', 'text'),
+      field('writer.donors.smallText', 'Chữ nhỏ', 'text'),
+      note('Mã thay thế: {gift} tên quà · {count} số lượng · {coins} xu/quà · {year} năm · {date} ngày · {name} tên.'),
+      field('writer.donors.maxChars', 'Số ký tự tên tối đa', 'number', { min: 4, max: 40 })),
+    card('Kích thước & tốc độ',
+      field('writer.donors.badgeHeightCm', 'Chiều cao logo', 'range', { min: 18, max: 37, step: 1, unit: ' cm' }),
+      field('writer.donors.aspect', 'Tỉ lệ rộng/cao', 'range', { min: 1, max: 3, step: 0.05 }),
+      field('writer.donors.offsetXcm', 'Lệch ngang', 'range', { min: -30, max: 30, step: 1, unit: ' cm' }),
+      field('writer.donors.nibMm', 'Ngòi viết tên', 'range', { min: 1, max: 6, step: 0.1, unit: ' mm' }),
+      field('writer.donors.decoNibMm', 'Ngòi nét trang trí', 'range', { min: 0.6, max: 3, step: 0.1, unit: ' mm' }),
+      field('writer.donors.revealNibMm', 'Ngòi in logo ảnh', 'range', { min: 3, max: 15, step: 0.5, unit: ' mm' }),
+      field('writer.donors.speed', 'Tốc độ viết tên', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
+      field('writer.donors.decoSpeed', 'Tốc độ vẽ trang trí', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
+      field('writer.donors.revealSpeed', 'Tốc độ in logo ảnh', 'range', { min: 0.3, max: 4, step: 0.1, unit: ' m/s' }),
+      field('writer.donors.maxSec', 'Thời gian tối đa / donate', 'number', { unit: 'giây', min: 0 })),
+    card(['Nền logo', h('small', {}, 'bật/tắt để chọn mẫu dùng')],
+      field('writer.donors.bgMode', 'Cách chọn', 'select', { options: [['random', 'Ngẫu nhiên'], ['sequential', 'Lần lượt'], ['fixed', 'Cố định 1 mẫu']] }),
+      field('writer.donors.bgFixed', 'Mẫu cố định', 'select', { options: () => cfg.backgrounds.map(b => [b.id, b.name]) }),
+      note('Ảnh logo của bạn (PNG nền trong suốt hoặc nền trắng) được máy "in" bằng mực theo từng đường quét; phần trắng tự thành trong suốt. Để chừa chỗ giữa logo cho tên.'),
+      bgList,
+      h('div', { class: 'btns' }, btn('+ Thêm ảnh logo', () => api.invoke('bg:addImage'), 'pri'))),
+  ));
+}
+
+// ================= TAB: Video
+function renderVideo() {
+  const CAT = { idle: 'Video idle (khi vắng)', greet: 'Video chào (có người vào)', thanks: 'Video cảm ơn (có quà)' };
+  live.vstat = h('div', { class: 'hint' }, '—');
+  const lists = {};
+  const draw = async () => {
+    for (const cat of Object.keys(CAT)) {
+      const files = cfg.video.categories[cat].files || [];
+      const ex = files.length ? await api.invoke('video:exists', files) : [];
+      lists[cat].replaceChildren(...(files.length ? files.map((f, i) => h('div', { class: 'item' + (ex[i] ? '' : ' missing'), title: f },
+        h('span', { class: 'grow' }, fname(f)),
+        btn('▶', () => api.invoke('video:playNow', cat, f), 'sm'), btn('×', () => api.invoke('video:remove', cat, f), 'sm red'))) : [h('div', { class: 'hint' }, 'Chưa có video')]));
+    }
+  };
+  const catCard = (cat, timing) => {
+    lists[cat] = h('div', { class: 'list' });
+    return card([CAT[cat], h('small', {}, '')],
+      field(`video.categories.${cat}.enabled`, 'Bật', 'bool'),
+      field(`video.categories.${cat}.random`, 'Phát ngẫu nhiên', 'bool', { tip: 'Tắt = phát lần lượt theo danh sách' }),
+      ...timing,
+      lists[cat],
+      h('div', { class: 'btns' }, btn('+ Thêm video', () => api.invoke('video:add', cat), 'pri'), btn('Phát thử', () => api.invoke('video:playNow', cat))));
+  };
+  $('#tab-video').replaceChildren(
+    h('div', { class: 'grid', style: 'margin-bottom:14px' },
+      card('Popup video', live.vstat,
+        field('video.whenNone', 'Khi không có video', 'select', { options: [['hide', 'Ẩn cửa sổ popup'], ['black', 'Màn đen'], ['last', 'Giữ khung hình cuối']] }),
+        field('video.alwaysOnTop', 'Luôn nằm trên cùng', 'bool'),
+        field('video.fit', 'Cách hiển thị', 'select', { options: [['contain', 'Vừa khung (không cắt)'], ['cover', 'Lấp đầy (cắt viền)'], ['fill', 'Kéo giãn']] }),
+        field('video.volume', 'Âm lượng', 'range', { min: 0, max: 1, step: 0.05 }),
+        note('Kéo phần giữa popup để di chuyển, kéo mép để đổi kích thước. Vị trí được nhớ cho lần sau.'),
+        h('div', { class: 'btns' }, btn('Hiện popup', () => api.invoke('win:show', 'popup')), btn('Đưa popup về góc màn hình', () => api.invoke('win:popupReset')), btn('Dừng video', () => api.invoke('video:stop'), 'red'))),
+      card('Ưu tiên', note('Cảm ơn > Chào > Idle. Video chào/cảm ơn có thời gian chờ giữa 2 lần phát; trong lúc chờ, các lượt vào/quà được gộp lại và phát 1 lần khi hết thời gian chờ.'),
+        note('"Tỉ lệ phát" cho phép chỉ phát ngẫu nhiên một phần số lần (ví dụ 50% = khoảng một nửa số lần đủ điều kiện).'))),
+    h('div', { class: 'cats' },
+      catCard('idle', [field('video.idle.afterSec', 'Coi là vắng sau', 'number', { unit: 'giây không ai vào/donate' }),
+        field('video.idle.gapSec', 'Nghỉ giữa 2 video idle', 'number', { unit: 'giây' }), field('video.idle.loop', 'Phát liên tục khi vắng', 'bool')]),
+      catCard('greet', [field('video.greet.cooldownSec', 'Tối thiểu giữa 2 lần chào', 'number', { unit: 'giây' }), field('video.greet.minJoins', 'Số người vào để chào', 'number', { unit: 'người', min: 1 }),
+        field('video.greet.chance', 'Tỉ lệ phát', 'range', { min: 0, max: 100, step: 5, unit: '%' }), field('video.greet.interruptIdle', 'Ngắt video idle', 'bool')]),
+      catCard('thanks', [field('video.thanks.cooldownSec', 'Tối thiểu giữa 2 lần cảm ơn', 'number', { unit: 'giây' }), field('video.thanks.minDiamonds', 'Quà tối thiểu', 'number', { unit: 'xu' }),
+        field('video.thanks.chance', 'Tỉ lệ phát', 'range', { min: 0, max: 100, step: 5, unit: '%' }), field('video.thanks.interrupt', 'Ngắt video chào/idle', 'bool')]),
+    ));
+  draw(); binds.push(draw);
+}
+function renderVStat(s) {
+  const CATV = { idle: 'Idle', greet: 'Chào', thanks: 'Cảm ơn' };
+  const t = s.paused ? 'Đang tạm dừng' : s.cur ? `▶ ${CATV[s.cur.cat]}: ${s.cur.file}` : `Chờ · vắng ${s.quietSec}s · idle sau ${s.idleIn}s · chào chờ ${s.cooldown.greet}s · cảm ơn chờ ${s.cooldown.thanks}s`;
+  if (live.vstat) live.vstat.textContent = t + `  (đã phát: idle ${s.counts.idle}, chào ${s.counts.greet}, cảm ơn ${s.counts.thanks})`;
+  const p = $('#pVid'); p.textContent = 'Video: ' + (s.paused ? 'tạm dừng' : s.cur ? CATV[s.cur.cat] : 'chờ'); p.className = 'pill ' + (s.cur ? 'ok' : '');
+  if (live.vpausedCb) live.vpausedCb.checked = !!s.paused;
+}
+
+// ================= TAB: Font
+function renderFonts() {
+  const sample = h('input', { type: 'text', value: 'Nguyễn Thị Hồng Nhung – Đặng Quốc Bảo' });
+  const list = h('div', { class: 'list', style: 'max-height:none' });
+  const draw = () => list.replaceChildren(...cfg.fonts.map(f => h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' },
+    h('div', { class: 'ctl' }, h('span', { class: 'grow' }, f.name), h('span', { class: 'tag' }, f.builtin ? 'có sẵn' : fname(f.file)),
+      f.builtin ? null : btn('Xoá', () => api.invoke('fonts:remove', f.id), 'sm red')),
+    h('div', { class: 'preview', style: `font-family:${ff(f.id)};font-size:30px` }, sample.value))));
+  sample.oninput = draw; draw(); binds.push(draw);
+  $('#tab-fonts').replaceChildren(h('div', { class: 'grid' },
+    card('Thêm font của bạn', note('Hỗ trợ .ttf, .otf, .woff. Font cần có dấu tiếng Việt; ký tự nào font thiếu sẽ tự lấy từ font dự phòng (Playfair/Dancing Script). Emoji được bỏ qua.'),
+      h('div', { class: 'row' }, h('label', {}, 'Chữ mẫu'), sample), h('div', { class: 'btns' }, btn('+ Thêm font', () => api.invoke('fonts:add'), 'pri'))),
+    card('Danh sách font', list)));
+}
+
+// ================= TAB: Hiển thị & camera
+function renderDisplay() {
+  $('#tab-display').replaceChildren(h('div', { class: 'grid' },
+    card('Cửa sổ hiển thị 9:16',
+      h('div', { class: 'btns' }, ...[[405, 720], [540, 960], [720, 1280], [1080, 1920]].map(([w, hh]) => btn(`${w}×${hh}`, () => api.invoke('win:displaySize', w, hh), 'sm'))),
+      field('display.frameless', 'Không viền cửa sổ', 'bool', { tip: 'Áp dụng khi tải lại màn hiển thị' }),
+      field('display.alwaysOnTop', 'Luôn nằm trên', 'bool'),
+      field('display.dragWindow', 'Kéo cửa sổ bằng chuột (tắt xoay camera)', 'bool'),
+      field('display.renderScale', 'Độ nét render', 'range', { min: 0.5, max: 2, step: 0.25, unit: '×' }),
+      h('div', { class: 'btns' }, btn('Tải lại màn hiển thị', () => api.invoke('win:recreateDisplay')))),
+    card('Camera',
+      note('Trong màn hiển thị: chuột trái xoay, chuột phải kéo, lăn để zoom. Chỉnh xong bấm lưu.'),
+      h('div', { class: 'btns' }, btn('Lưu góc chính', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'main' }), 'pri'),
+        btn('Lưu góc cận donate', () => api.invoke('display:cmd', { cmd: 'saveCamera', name: 'donor' }), 'pri')),
+      h('div', { class: 'btns' }, btn('Về góc chính', () => api.invoke('display:cmd', { cmd: 'camera', name: 'main' })), btn('Xem góc donate', () => api.invoke('display:cmd', { cmd: 'camera', name: 'donor' })),
+        btn('Mặc định góc chính', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'main' })), btn('Mặc định góc donate', () => api.invoke('display:cmd', { cmd: 'resetCamera', name: 'donor' }))),
+      field('display.mouseCamera', 'Cho phép xoay bằng chuột', 'bool'),
+      field('display.followPen', 'Camera bám theo ngòi bút', 'range', { min: 0, max: 100, step: 5, unit: '%' }),
+      field('display.donorZoom', 'Tự zoom khi viết donate', 'bool'),
+      field('display.donorHoldSec', 'Giữ cận cảnh sau khi xong', 'number', { unit: 'giây' })),
+    card('Cảnh & giấy',
+      field('display.bgColor', 'Màu nền', 'color'),
+      h('div', { class: 'row' }, h('label', {}, 'Ảnh nền'), h('div', { class: 'ctl' },
+        btn('Chọn ảnh', async () => { const f = await api.invoke('files:pick', 'image'); if (f[0]) setPath('display.bgImage', f[0]); }, 'sm'),
+        btn('Bỏ', () => setPath('display.bgImage', ''), 'sm red'))),
+      field('display.exposure', 'Độ sáng', 'range', { min: 0.5, max: 1.8, step: 0.05 }),
+      field('display.floorShadow', 'Bóng đổ nền', 'range', { min: 0, max: 0.8, step: 0.02 }),
+      field('writer.paper.inkColor', 'Màu mực', 'color'),
+      field('writer.paper.feedSpeed', 'Tốc độ cuộn giấy', 'range', { min: 0.03, max: 0.4, step: 0.01, unit: ' m/s' }),
+      field('writer.maxSpeedup', 'Tăng tốc tối đa khi gấp', 'range', { min: 1, max: 8, step: 0.5, unit: '×' }))));
+}
+
+// ================= TAB: Cập nhật
+function renderUpdate() {
+  live.upd = h('div', { class: 'hint' }, '—'); live.info = h('div', { class: 'hint' });
+  live.applyBtn = btn('Khởi động lại để cập nhật', () => api.invoke('update:apply'), 'pri'); live.applyBtn.style.display = 'none';
+  $('#tab-update').replaceChildren(h('div', { class: 'grid' },
+    card('Cập nhật từ xa qua GitHub', note('App tải thư mục app/ mới nhất từ repo GitHub (public) khi version.json trong repo có số phiên bản lớn hơn.'),
+      field('update.owner', 'Tài khoản GitHub', 'text'), field('update.repo', 'Tên repo', 'text'), field('update.branch', 'Nhánh', 'text'),
+      field('update.autoCheck', 'Tự kiểm tra', 'bool'), field('update.intervalMin', 'Kiểm tra mỗi', 'number', { unit: 'phút', min: 10 }),
+      live.upd, h('div', { class: 'btns' }, btn('Kiểm tra ngay', () => api.invoke('update:check')), live.applyBtn)),
+    card('Ứng dụng', live.info,
+      h('div', { class: 'btns' }, btn('Mở thư mục dữ liệu', () => api.invoke('open:userData')), btn('Xuất cấu hình', () => api.invoke('config:export')), btn('Nhập cấu hình', () => api.invoke('config:import'))))));
+  api.invoke('app:info').then(i => { live.info.textContent = `Phiên bản app v${i.appVersion} (${i.appSource === 'update' ? 'bản cập nhật' : 'bản cài'}) · shell v${i.shellVersion} · dữ liệu: ${i.userData}`; $('#ver').textContent = `v${i.appVersion}`; });
+  api.invoke('update:status').then(renderUpd);
+}
+function renderUpd(s) { if (!live.upd || !s) return; live.upd.textContent = s.message || s.state; live.applyBtn.style.display = s.state === 'ready' ? '' : 'none'; if (s.state === 'ready') toast(s.message); }
+
+// ---------------- khởi tạo
+refreshFontFaces();
+renderHome(); renderNames(); renderDonors(); renderVideo(); renderFonts(); renderDisplay(); renderUpdate();
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
+});
+api.on('config', (c) => { const fontsChanged = JSON.stringify(c.fonts) !== JSON.stringify(cfg.fonts); cfg = c; if (fontsChanged) refreshFontFaces(); binds.forEach(f => f()); });
+api.on('log', addLog);
+api.on('queue', renderQueue);
+api.on('video:status', renderVStat);
+api.on('update:status', renderUpd);
+function renderTik(s) {
+  const p = $('#pTik'); p.textContent = 'TikTok: ' + ({ connected: 'đã kết nối', connecting: 'đang kết nối', error: 'lỗi', disconnected: 'chưa kết nối' }[s.state] || s.state) + (s.viewers ? ` · ${s.viewers} người xem` : '');
+  p.className = 'pill ' + ({ connected: 'ok', connecting: 'warn', error: 'err' }[s.state] || '');
+  if (live.tikMsg) live.tikMsg.textContent = s.message;
+}
+api.on('tiktok:status', renderTik);
+api.on('display:status', (s) => {
+  const p = $('#pWrite'); p.textContent = 'Máy viết: ' + (s.busy ? (s.job ? `đang viết "${s.job.name}"` : 'đang viết') : 'rảnh') + (s.fps ? ` · ${s.fps} fps` : '');
+  p.className = 'pill ' + (s.busy ? 'ok' : '');
+  if (live.writing) live.writing.textContent = s.busy && s.job ? `Đang viết: ${s.job.name} (${s.job.type === 'donor' ? 'donate' : 'tên'})` : 'Máy viết đang chờ';
+});
+api.invoke('queue:get').then(renderQueue);
+api.invoke('video:status').then(renderVStat);
+api.invoke('tiktok:status').then(s => s && renderTik(s));
