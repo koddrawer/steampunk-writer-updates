@@ -130,9 +130,17 @@ export class Writer {
     return true;
   }
 
+  // Dừng câu quote đang viết dở: nhấc bút, cuộn giấy cho chữ dở chạy khuất qua trục trước, rồi mới viết tên
   abort() {
-    if (!this.busy) return;
-    this.steps = this.steps.filter(s => s.k === 'call').concat([{ k: 'done' }]);
+    if (!this.busy || this.aborting) return;
+    if (this.planning) { this.abortPending = true; return; }
+    if (!this.inked) { this.step = null; this.steps = [{ k: 'done' }]; this.restoreLayout(); return; }   // chưa kịp viết chữ nào
+    this.aborting = true;
+    const q = this.cfg().writer.quotes || {};
+    const d = (YTOP - G.FR_Y) + G.FR_R * 2.7 + 0.03;      // từ mép trên vùng viết, qua đỉnh trục trước, quấn xuống khuất
+    this.step = null;
+    this.steps = [{ k: 'advance', d, speed: q.clearFeedSpeed || 0.35 },
+      { k: 'call', fn: () => { this.contentHigh = -Infinity; this.rowOpen = false; this.aborting = false; } }, { k: 'done' }];
   }
 
   async planDonor(job) {
@@ -149,7 +157,7 @@ export class Writer {
     const fill = (t) => (t || '').replace(/\{gift\}/g, job.gift || 'Gift').replace(/\{count\}/g, job.count || 1)
       .replace(/\{coins\}/g, job.diamonds || 0).replace(/\{year\}/g, new Date().getFullYear()).replace(/\{name\}/g, name)
       .replace(/\{date\}/g, new Date().toLocaleDateString('vi-VN'));
-    const bg = this.pickBackground();
+    const bg = this.pickBackground(job);
     const nibName = (c.nibMm || 3) / 1000, nibDeco = (c.decoNibMm || 1.4) / 1000;
     const place = ([x, y]) => [cx + x, cy + y];
     this.hooks.onDonorStart && this.hooks.onDonorStart({ cx, cy, W, H });
@@ -158,8 +166,8 @@ export class Writer {
       const tpl = bg && TEMPLATES[bg.template] ? bg.template : 'seal';
       const b = buildBadge(tpl, { W, H, chains: { name: nameChain, deco: decoChain }, name,
         top: fill(bg?.top ?? c.topText), bottom: fill(bg?.bottom ?? c.bottomText), small: fill(bg?.small ?? c.smallText), nibName, nibDeco });
-      this.queueStrokes(b.deco.map(s => s.map(place)), nibDeco, c.decoSpeed || 0.6, (c.maxSec || 30) * 0.55, null, 'ltr');
-      this.queueStrokes(b.names.map(s => s.map(place)), nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null, 'keep');
+      this.queueStrokes(b.deco.map(s => s.map(place)), nibDeco, c.decoSpeed || 0.6, 0, null, 'ltr');
+      this.queueStrokes(b.names.map(s => s.map(place)), nibName, c.speed || 0.45, 0, null, 'keep');
     } else {
       const img = await this.loadInkImage(bg.file, !!bg.keepColors);
       if (img) {
@@ -190,8 +198,19 @@ export class Writer {
     return true;
   }
 
-  pickBackground() {
-    const c = this.cfg(); const list = (c.backgrounds || []).filter(b => b.enabled !== false);
+  pickBackground(job) {
+    const c = this.cfg();
+    // bậc donate: chọn bậc cao nhất mà tổng xu đạt tới, lấy ngẫu nhiên 1 logo trong bậc đó
+    if ((c.writer.donors.bgMode || 'tiers') === 'tiers') {
+      const total = job ? (job.total ?? (job.diamonds || 0) * (job.count || 1)) : 0;
+      const tiers = (c.writer.donors.tiers || []).filter(t => t.enabled !== false).sort((a, b) => (b.min || 0) - (a.min || 0));
+      const tier = tiers.find(t => total >= (t.min || 0)) || tiers[tiers.length - 1];
+      if (tier) {
+        const opts = (tier.bgs || []).map(id => (c.backgrounds || []).find(b => b.id === id)).filter(Boolean);
+        if (opts.length) { this.lastTier = tier.name; return opts[Math.floor(Math.random() * opts.length)]; }
+      }
+    }
+    const list = (c.backgrounds || []).filter(b => b.enabled !== false);
     if (!list.length) return null;
     const mode = c.writer.donors.bgMode || 'random';
     if (mode === 'fixed') return list.find(b => b.id === c.writer.donors.bgFixed) || list[0];
@@ -238,26 +257,66 @@ export class Writer {
     strokes = strokes.filter(s => s.length > 1).map(s => s.map(([x, y]) => [Math.min(G.SHEET_X1 - 0.004, Math.max(G.SHEET_X0 + 0.004, x)), Math.min(YTOP + 0.02, Math.max(Y_MIN, y))]));
     if (!strokes.length) return;
     const ordered = order === 'opt' ? optimizeOrder(strokes, [this.planPen?.[0] ?? this.pen.x, this.planPen?.[1] ?? this.pen.y]) : order === 'ltr' ? sortLTR(strokes) : strokes;
-    const L = strokesLength(ordered);
-    const g = this.cfg().writer;
     const travelK = 2.2;
-    let t = L.draw / speed + L.travel / (speed * travelK) + L.count * 0.1;
-    const k = maxSec > 0 && t > maxSec ? Math.min(g.maxSpeedup || 4, t / maxSec) : 1;
-    for (const s of ordered) this.steps.push({ k: 'stroke', pts: s, nib, speed: speed * k, travel: speed * k * travelK, zv: 0.22 * k, style });
+    for (const s of ordered) this.steps.push({ k: 'stroke', pts: s, nib, speed, travel: speed * travelK, zv: 0.22, mc: 0.04, style });
     this.planPen = ordered[ordered.length - 1][ordered[ordered.length - 1].length - 1];
   }
 
   async start(job) {
-    this.job = job; this.busy = true; this.steps = [];
+    this.saved = { contentHigh: this.contentHigh, rowOpen: this.rowOpen, xCur: this.xCur, rowH: this.rowH }; this.advanced = 0;
+    this.job = job; this.busy = true; this.steps = []; this.inked = false; this.planning = true; this.abortPending = false;
     let ok = false;
     try { ok = job.type === 'donor' ? await this.planDonor(job) : job.type === 'quote' ? await this.planQuote(job) : await this.planName(job); }
     catch (e) { console.error('plan lỗi', e); }
+    this.planning = false;
     if (!ok) { this.busy = false; this.job = null; return false; }
+    if (this.abortPending) { this.abortPending = false; this.steps = [{ k: 'done' }]; this.restoreLayout(); this.hooks.onJobStart && this.hooks.onJobStart(job); return true; }
+    const W = this.cfg().writer;
+    const sec = job.type === 'donor' ? W.donors.maxSec : job.type === 'quote' ? W.quotes?.maxSec : W.names.maxSec;
+    this.fitTime(sec);
     this.steps.push({ k: 'done' });
     this.hooks.onJobStart && this.hooks.onJobStart(job);
     return true;
   }
 
+  // Ước lượng thời gian vẽ của toàn bộ nét (giống hệt cách bộ chạy di chuyển bút),
+  // rồi tăng tốc đều tất cả để viết xong trong <= sec giây (tối đa 10 giây).
+  estimate(strokes) {
+    let x = this.pen.x, y = this.pen.y, down = this.pen.z < G.PAPER_Z + 0.001, t = 0;
+    for (const st of strokes) {
+      const [sx, sy] = st.pts[0]; const d = Math.hypot(sx - x, sy - y);
+      if (!(d < st.nib * 0.6 && down)) {
+        const lift = d < 0.012 ? 0.0025 : d < 0.05 ? 0.006 : LIFT;
+        t += (down ? lift : 0) / st.zv + lift / st.zv + d / st.travel + st.mc;
+      }
+      for (let i = 1; i < st.pts.length; i++) t += Math.hypot(st.pts[i][0] - st.pts[i - 1][0], st.pts[i][1] - st.pts[i - 1][1]) / st.speed;
+      [x, y] = st.pts[st.pts.length - 1]; down = true;
+    }
+    return t;
+  }
+  fitTime(sec) {
+    const limit = Math.min(10, Math.max(1, +sec || 10));
+    // cuộn giấy trước khi viết cũng tính vào thời gian: tối đa 25% quỹ thời gian
+    const feed = this.cfg().writer.paper?.feedSpeed || 0.12;
+    let advT = 0;
+    for (const st of this.steps.filter(s => s.k === 'advance')) {
+      const T0 = st.d / (st.speed || feed) + 0.3, cap = Math.max(0.8, limit * 0.25);
+      if (T0 > cap) st.speed = st.d / (cap - 0.3);
+      advT += Math.min(T0, cap);
+    }
+    const strokes = this.steps.filter(s => s.k === 'stroke'); if (!strokes.length) return;
+    const t = this.estimate(strokes);
+    const k = t / (Math.max(limit * 0.5, limit - advT) * 0.96);
+    if (k > 1) for (const st of strokes) { st.speed *= k; st.travel *= k; st.zv *= k; st.mc /= k; }
+    this.lastEstimate = Math.min(t, limit);
+  }
+
+  // huỷ bố cục đã lập cho việc bị bỏ (chỉ tính phần giấy thực sự đã cuộn)
+  restoreLayout() {
+    const sv = this.saved; if (!sv) return;
+    this.contentHigh = sv.contentHigh === -Infinity ? -Infinity : sv.contentHigh - this.advanced;
+    this.rowOpen = this.advanced > 0 ? false : sv.rowOpen; this.xCur = sv.xCur; this.rowH = sv.rowH;
+  }
   clearPaper() { this.p.clear(); this.contentHigh = -Infinity; this.rowOpen = false; }
 
   // ---------------- chuyển động (gọi mỗi khung hình)
@@ -277,7 +336,7 @@ export class Writer {
         if (st.phase === 'lift') { budget = this.zTo(st, G.PAPER_Z + st.lift, budget, st.zv); if (this.pen.z >= G.PAPER_Z + st.lift - 1e-6) st.phase = 'move'; continue; }
         if (st.phase === 'move') {
           const [tx, ty] = st.pts[0];
-          if (!st.mv) { const d = Math.hypot(tx - this.pen.x, ty - this.pen.y); st.mv = { x0: this.pen.x, y0: this.pen.y, T: d / st.travel + 0.04, t: 0 }; }
+          if (!st.mv) { const d = Math.hypot(tx - this.pen.x, ty - this.pen.y); st.mv = { x0: this.pen.x, y0: this.pen.y, T: d / st.travel + (st.mc ?? 0.04), t: 0 }; }
           const mv = st.mv; const use = Math.min(budget, mv.T - mv.t); mv.t += use; budget -= use;
           const u = mv.t / mv.T, e = u * u * (3 - 2 * u);
           this.pen.x = mv.x0 + (tx - mv.x0) * e; this.pen.y = mv.y0 + (ty - mv.y0) * e;
@@ -287,6 +346,7 @@ export class Writer {
         if (st.phase === 'lower') { budget = this.zTo(st, G.PAPER_Z + 0.0003, budget, st.zv); if (this.pen.z <= G.PAPER_Z + 0.0003 + 1e-6) { st.phase = 'draw'; st.i = 1; } continue; }
         if (st.phase === 'draw') {
           const style = typeof st.style === 'function' ? st.style() : st.style;
+          this.inked = true;
           if (st.alpha === undefined) st.alpha = st.style ? 1 : 0.8 + Math.random() * 0.2;   // độ đậm mực thay đổi nhẹ giữa các nét
           let dist = budget * st.speed;
           while (dist > 0 && st.i < st.pts.length) {
@@ -300,10 +360,10 @@ export class Writer {
         }
       } else if (st.k === 'advance') {
         if (this.pen.z < G.PAPER_Z + LIFT) { budget = this.zTo(st, G.PAPER_Z + LIFT, budget, 0.16); continue; }
-        if (!st.T) { st.T = st.d / feed + 0.3; st.t = 0; st.done = 0; }
+        if (!st.T) { st.T = st.d / (st.speed || feed) + 0.3; st.t = 0; st.done = 0; }
         const use = Math.min(budget, st.T - st.t); st.t += use; budget -= use;
         const u = st.t / st.T, e = u * u * (3 - 2 * u); const target = st.d * e; const ds = target - st.done; st.done = target;
-        if (ds > 0) { this.p.advance(ds); this.m.setPaperS(this.p.s); }
+        if (ds > 0) { this.p.advance(ds); this.m.setPaperS(this.p.s); this.advanced += ds; }
         if (st.t >= st.T - 1e-9) this.step = null;
       } else if (st.k === 'call') { st.fn(); this.step = null; }
       else if (st.k === 'wait') { st.t = (st.t || 0) + budget; budget = 0; if (st.t >= st.T) this.step = null; }

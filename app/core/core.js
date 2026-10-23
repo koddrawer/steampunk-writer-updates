@@ -41,6 +41,15 @@ module.exports = async function start(ctx) {
     if (!saved.display || saved.display.bgColor === '#efe9df') cfg.display.bgColor = DEFAULTS.display.bgColor;
     cfg.configVersion = 2;
   }
+  // v3 (bản 1.2.0): thời gian viết tối đa 10 giây, logo theo bậc donate
+  if ((saved.configVersion || 1) < 3) {
+    const w = cfg.writer;
+    w.names.maxSec = Math.min(10, w.names.maxSec || 6);
+    w.quotes.maxSec = Math.min(10, w.quotes.maxSec || 10);
+    w.donors.maxSec = Math.min(10, w.donors.maxSec || 10);
+    if (!saved.writer || !saved.writer.donors || !saved.writer.donors.bgMode || saved.writer.donors.bgMode === 'random') w.donors.bgMode = 'tiers';
+    cfg.configVersion = 3;
+  }
   let saveT = null;
   const save = () => { clearTimeout(saveT); saveT = setTimeout(() => fs.writeFile(cfgFile, JSON.stringify(cfg, null, 1), () => { }), 300); };
   const getCfg = () => cfg;

@@ -6,7 +6,7 @@ const builtinFont = (id, name, fam, w, subs = ['latin', 'latin-ext', 'vietnamese
 const NO_VN = ['latin', 'latin-ext'];
 
 module.exports = {
-  configVersion: 2,
+  configVersion: 3,
   tiktok: { username: '', signApiKey: '', autoConnect: false, autoReconnect: true },
   fonts: [
     builtinFont('great-vibes', 'Great Vibes (chữ ký)', 'great-vibes', 400),
@@ -27,7 +27,7 @@ module.exports = {
     maxSpeedup: 5,
     names: {
       enabled: true, sources: { join: true, chat: false, follow: false, share: false, like: false },
-      fontId: 'great-vibes', sizeCm: 4.2, nibMm: 1.6, fill: 'hatch', speed: 0.35, maxSec: 7,
+      fontId: 'great-vibes', sizeCm: 4.2, nibMm: 1.6, fill: 'hatch', speed: 0.35, maxSec: 6,
       maxChars: 18, display: 'nickname', dedupeMin: 30, maxQueue: 40, skipWhenDonors: false,
       likeThreshold: 10,
       // nội dung viết kèm tên – mỗi dòng là một mẫu, chọn ngẫu nhiên. Mã: {name} {comment} {likes}
@@ -41,7 +41,7 @@ module.exports = {
     },
     quotes: {
       enabled: true, afterSec: 20, gapSec: 6, interrupt: true, random: true,
-      fontId: 'dancing', sizeCm: 6, authorSizeCm: 3.2, nibMm: 1.8, fill: 'hatch', speed: 0.4, maxSec: 40, widthPct: 84, divider: true,
+      fontId: 'dancing', sizeCm: 6, authorSizeCm: 3.2, nibMm: 1.8, fill: 'hatch', speed: 0.4, maxSec: 10, widthPct: 84, divider: true, clearFeedSpeed: 0.35,
       list: [
         'Có công mài sắt, có ngày nên kim — Tục ngữ',
         'Đi một ngày đàng, học một sàng khôn — Tục ngữ',
@@ -63,8 +63,15 @@ module.exports = {
     donors: {
       enabled: true, minDiamonds: 1, mergeSec: 6, fontId: 'great-vibes', decoFontId: 'playfair',
       badgeHeightCm: 34, aspect: 1.7, nibMm: 3, decoNibMm: 1.4, speed: 0.5, decoSpeed: 0.7, revealSpeed: 1.4, revealNibMm: 7,
-      maxSec: 26, maxChars: 22, display: 'nickname', bgMode: 'random', bgFixed: 'tpl-seal',
+      maxSec: 10, maxChars: 22, display: 'nickname', bgMode: 'tiers', bgFixed: 'tpl-seal',
       topText: 'THANK YOU', bottomText: '{gift} x{count}', smallText: 'EST. {year}', maxQueue: 30,
+      // bậc donate theo tổng xu: mỗi bậc chọn logo riêng (nhiều logo thì lấy ngẫu nhiên)
+      tiers: [
+        { id: 'tier1', name: 'Bậc 1', min: 1, bgs: ['tpl-script'], enabled: true },
+        { id: 'tier2', name: 'Bậc 2', min: 10, bgs: ['tpl-seal'], enabled: true },
+        { id: 'tier3', name: 'Bậc 3', min: 100, bgs: ['tpl-frame'], enabled: true },
+        { id: 'tier4', name: 'Bậc 4', min: 500, bgs: ['tpl-crest'], enabled: true },
+      ],
     },
     paper: { inkColor: '#140d07', feedSpeed: 0.12, pxPerM: 1600, tint: '#f3e6cc', grain: 1 },
   },

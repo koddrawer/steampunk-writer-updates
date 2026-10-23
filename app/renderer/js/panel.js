@@ -164,7 +164,7 @@ function renderNames() {
       field('writer.names.fill', 'Kiểu nét', 'select', { options: [['hatch', 'Tô đặc (bút đi kín nét)'], ['outline', 'Chỉ viền']] }),
       field('writer.names.maxChars', 'Số ký tự tối đa', 'number', { min: 4, max: 40 }),
       field('writer.names.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
-      field('writer.names.maxSec', 'Thời gian tối đa / tên', 'number', { unit: 'giây', min: 0, tip: 'Máy tự tăng tốc nếu tên dài (0 = không giới hạn)' })),
+      field('writer.names.maxSec', 'Thời gian viết 1 tên (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây', tip: 'Tên dài hơn sẽ được viết nhanh hơn để xong trong thời gian này' })),
     card(['Nội dung viết kèm tên', h('small', {}, 'mỗi dòng = 1 mẫu, chọn ngẫu nhiên')],
       note('Mã thay thế: {name} tên · {comment} nội dung bình luận · {likes} số tim. Ví dụ: "Chào {name}!" hoặc "{name}: {comment}". Câu dài tự xuống dòng (tối đa 3 dòng).'),
       field('writer.names.templates.join', 'Người vào phòng', 'textarea', { full: true, rows: 2 }),
@@ -244,14 +244,50 @@ function renderDonors() {
       field('writer.donors.speed', 'Tốc độ viết tên', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
       field('writer.donors.decoSpeed', 'Tốc độ vẽ trang trí', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
       field('writer.donors.revealSpeed', 'Tốc độ in logo ảnh', 'range', { min: 0.3, max: 4, step: 0.1, unit: ' m/s' }),
-      field('writer.donors.maxSec', 'Thời gian tối đa / donate', 'number', { unit: 'giây', min: 0 })),
+      field('writer.donors.maxSec', 'Thời gian vẽ logo + tên (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây', tip: 'Chưa gồm vài giây cuộn giấy trước khi vẽ' })),
+    tierCard(),
     card(['Nền logo', h('small', {}, 'bật/tắt để chọn mẫu dùng')],
-      field('writer.donors.bgMode', 'Cách chọn', 'select', { options: [['random', 'Ngẫu nhiên'], ['sequential', 'Lần lượt'], ['fixed', 'Cố định 1 mẫu']] }),
+      field('writer.donors.bgMode', 'Cách chọn', 'select', { options: [['tiers', 'Theo bậc donate'], ['random', 'Ngẫu nhiên'], ['sequential', 'Lần lượt'], ['fixed', 'Cố định 1 mẫu']] }),
       field('writer.donors.bgFixed', 'Mẫu cố định', 'select', { options: () => cfg.backgrounds.map(b => [b.id, b.name]) }),
       note('Ảnh logo của bạn (PNG nền trong suốt hoặc nền trắng) được máy "in" bằng mực theo từng đường quét; phần trắng tự thành trong suốt. Để chừa chỗ giữa logo cho tên.'),
       bgList,
       h('div', { class: 'btns' }, btn('+ Thêm ảnh logo', () => api.invoke('bg:addImage'), 'pri'))),
   ));
+}
+
+// ---------- bậc donate
+function tierCard() {
+  const list = h('div', { class: 'list', style: 'max-height:none' });
+  const save = (arr) => setPath('writer.donors.tiers', arr);
+  const draw = () => {
+    const tiers = cfg.writer.donors.tiers || [];
+    list.replaceChildren(...tiers.map((t, i) => {
+      const upd = (k, v) => { const a = structuredClone(cfg.writer.donors.tiers); a[i][k] = v; save(a); };
+      const on = h('input', { type: 'checkbox' }); on.checked = t.enabled !== false; on.onchange = () => upd('enabled', on.checked);
+      const nm = h('input', { type: 'text', value: t.name || '', style: 'max-width:120px' }); nm.onchange = () => upd('name', nm.value);
+      const mn = h('input', { type: 'number', value: t.min ?? 1, min: 0, style: 'max-width:90px' }); mn.onchange = () => upd('min', Math.max(0, +mn.value || 0));
+      const chips = cfg.backgrounds.map(b => {
+        const cb = h('input', { type: 'checkbox' }); cb.checked = (t.bgs || []).includes(b.id);
+        cb.onchange = () => { const set = new Set(t.bgs || []); cb.checked ? set.add(b.id) : set.delete(b.id); upd('bgs', [...set]); };
+        return h('label', { class: 'tag', style: 'display:inline-flex;gap:5px;align-items:center;cursor:pointer;padding:3px 8px' }, cb,
+          b.type === 'image' ? h('img', { src: api.mediaUrl(b.file), style: 'width:28px;height:18px;object-fit:contain;background:#e9dfca;border-radius:3px' }) : null, b.name);
+      });
+      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch;gap:6px' },
+        h('div', { class: 'ctl', style: 'gap:8px;flex-wrap:wrap' }, h('label', { class: 'switch' }, on, h('span')), nm,
+          h('span', { class: 'hint' }, 'từ'), mn, h('span', { class: 'hint' }, 'xu trở lên'), h('span', { class: 'grow' }),
+          btn('Xoá', () => save(cfg.writer.donors.tiers.filter((_, k) => k !== i)), 'sm red')),
+        h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, ...chips),
+        (t.bgs || []).length ? null : h('div', { class: 'hint', style: 'color:var(--warn)' }, 'Chưa chọn logo – bậc này sẽ dùng các logo đang bật'));
+    }));
+  };
+  draw(); binds.push(draw);
+  return card(['Bậc donate', h('small', {}, 'áp dụng khi "Cách chọn" = Theo bậc donate')],
+    note('Tính theo tổng xu của lượt tặng (đã gộp combo). Máy dùng bậc cao nhất mà người tặng đạt tới; bậc có nhiều logo thì chọn ngẫu nhiên. Ảnh logo thêm ở thẻ "Nền logo" sẽ xuất hiện ở đây để chọn.'),
+    list,
+    h('div', { class: 'btns' }, btn('+ Thêm bậc', () => {
+      const a = structuredClone(cfg.writer.donors.tiers || []); const top = a.reduce((m, t) => Math.max(m, t.min || 0), 0);
+      a.push({ id: 'tier-' + Date.now().toString(36), name: 'Bậc ' + (a.length + 1), min: top ? top * 5 : 1, bgs: [], enabled: true }); save(a);
+    }, 'pri')));
 }
 
 // ================= TAB: Video
@@ -330,7 +366,7 @@ function renderQuotes() {
       field('writer.quotes.fill', 'Kiểu nét', 'select', { options: [['hatch', 'Tô đặc'], ['outline', 'Chỉ viền']] }),
       field('writer.quotes.divider', 'Gạch trang trí dưới câu', 'bool'),
       field('writer.quotes.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
-      field('writer.quotes.maxSec', 'Thời gian tối đa / câu', 'number', { unit: 'giây' })),
+      field('writer.quotes.maxSec', 'Thời gian viết 1 câu (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây' })),
     card(['Danh sách quote', cnt],
       note('Mỗi dòng 1 câu. Muốn ghi tác giả thì thêm " — Tên tác giả" ở cuối dòng.'),
       field('writer.quotes.list', 'Danh sách', 'lines', { full: true, rows: 16 })),
@@ -394,8 +430,7 @@ function renderDisplay() {
       field('writer.paper.inkColor', 'Màu mực', 'color'),
       field('writer.paper.tint', 'Màu giấy', 'color'),
       field('writer.paper.grain', 'Độ vân giấy', 'range', { min: 0, max: 1.5, step: 0.05 }),
-      field('writer.paper.feedSpeed', 'Tốc độ cuộn giấy', 'range', { min: 0.03, max: 0.4, step: 0.01, unit: ' m/s' }),
-      field('writer.maxSpeedup', 'Tăng tốc tối đa khi gấp', 'range', { min: 1, max: 8, step: 0.5, unit: '×' }))));
+      field('writer.paper.feedSpeed', 'Tốc độ cuộn giấy', 'range', { min: 0.03, max: 0.4, step: 0.01, unit: ' m/s' }))));
 }
 
 // ================= TAB: Cập nhật

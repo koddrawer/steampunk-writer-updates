@@ -158,7 +158,7 @@ const writer = new Writer(machine, paper, fonts, getCfg, {
   },
   onJobStart: (job) => {
     if (job.type === 'quote') { if (cfg.display.quoteCam !== false && camMode !== 'quote') goCam('quote', 2.4); }
-    else if (job.type === 'name' && camMode === 'quote') goCam('main', 1.6);
+    else if (camMode === 'quote' && !(job.type === 'donor' && cfg.display.donorZoom !== false)) goCam('main', 1.6);
   },
   onJobDone: (job) => { api.send('display:jobDone', job && { id: job.id, type: job.type, name: job.name }); report(); },
 });
