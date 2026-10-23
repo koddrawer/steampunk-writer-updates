@@ -1,4 +1,5 @@
 // Bảng điều khiển
+import { templateThumb } from './thumbs.js';
 const api = window.api;
 let cfg = await api.getConfig();
 const $ = (s, r = document) => r.querySelector(s);
@@ -194,31 +195,25 @@ function renderQueue(q) {
 // ================= TAB: Donate & Logo
 function renderDonors() {
   live.qDonors = h('div', { class: 'list' });
-  const bgList = h('div', { class: 'list', style: 'max-height:520px' });
+  // khung đang bật (dùng cho chế độ ngẫu nhiên / lần lượt)
+  const enabledStrip = h('div', { class: 'thumbstrip' });
+  const fixedStrip = h('div', { class: 'thumbstrip' });
+  const imgList = h('div', { class: 'list', style: 'max-height:420px' });
   const draw = () => {
-    bgList.replaceChildren(...cfg.backgrounds.map((b, i) => {
-      const on = h('input', { type: 'checkbox' }); on.checked = b.enabled !== false;
-      on.onchange = () => { const arr = structuredClone(cfg.backgrounds); arr[i].enabled = on.checked; setPath('backgrounds', arr); };
+    fillStrip(enabledStrip, cfg.backgrounds.filter(b => b.enabled !== false).map(b => b.id));
+    fillStrip(fixedStrip, [cfg.writer.donors.bgFixed]);
+    const imgs = cfg.backgrounds.map((b, i) => [b, i]).filter(([b]) => b.type === 'image');
+    imgList.replaceChildren(...(imgs.length ? imgs.map(([b, i]) => {
       const upd = (k, v) => { const arr = structuredClone(cfg.backgrounds); arr[i][k] = v; setPath('backgrounds', arr); };
-      const extra = [];
-      if (b.type === 'image') {
-        const kc = h('input', { type: 'checkbox' }); kc.checked = !!b.keepColors; kc.onchange = () => upd('keepColors', kc.checked);
-        const yo = h('input', { type: 'number', value: b.nameYOffset ?? 0, step: 1, style: 'max-width:70px' }); yo.onchange = () => upd('nameYOffset', +yo.value);
-        const nw = h('input', { type: 'number', value: b.nameWidth ?? 70, step: 1, style: 'max-width:70px' }); nw.onchange = () => upd('nameWidth', +nw.value);
-        extra.push(h('div', { class: 'ctl', style: 'gap:10px;margin-top:6px;flex-wrap:wrap' },
+      const kc = h('input', { type: 'checkbox' }); kc.checked = !!b.keepColors; kc.onchange = () => upd('keepColors', kc.checked);
+      const yo = h('input', { type: 'number', value: b.nameYOffset ?? 0, step: 1, style: 'max-width:70px' }); yo.onchange = () => upd('nameYOffset', +yo.value);
+      const nw = h('input', { type: 'number', value: b.nameWidth ?? 70, step: 1, style: 'max-width:70px' }); nw.onchange = () => upd('nameWidth', +nw.value);
+      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' },
+        h('div', { class: 'ctl' }, h('img', { class: 'thumb', src: api.mediaUrl(b.file) }), h('span', { class: 'grow' }, b.name), btn('Xoá', () => api.invoke('bg:remove', b.id), 'sm red')),
+        h('div', { class: 'ctl', style: 'gap:10px;margin-top:6px;flex-wrap:wrap' },
           h('label', { class: 'hint' }, 'Giữ màu ảnh '), h('label', { class: 'switch' }, kc, h('span')),
           h('label', { class: 'hint' }, 'Tên lệch dọc %'), yo, h('label', { class: 'hint' }, 'Bề rộng tên %'), nw));
-      } else {
-        const t = (k, ph) => { const x = h('input', { type: 'text', placeholder: ph }); x.value = b[k] ?? ''; x.onchange = () => upd(k, x.value === '' ? undefined : x.value); return x; };
-        extra.push(h('div', { class: 'ctl', style: 'gap:6px;margin-top:6px' }, t('top', 'chữ trên (mặc định)'), t('bottom', 'chữ dưới'), t('small', 'chữ nhỏ')));
-      }
-      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' },
-        h('div', { class: 'ctl' }, h('label', { class: 'switch' }, on, h('span')),
-          b.type === 'image' ? h('img', { class: 'thumb', src: api.mediaUrl(b.file) }) : h('span', { class: 'tag' }, 'mẫu'),
-          h('span', { class: 'grow' }, b.name),
-          b.type === 'image' ? btn('Xoá', () => api.invoke('bg:remove', b.id), 'sm red') : null),
-        ...extra);
-    }));
+    }) : [h('div', { class: 'hint' }, 'Chưa có ảnh logo riêng')]));
   };
   draw(); binds.push(draw);
   const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.donors.fontId)};font-size:44px;text-align:center` }, 'Hoàng Thuỳ Linh');
@@ -256,11 +251,70 @@ function renderDonors() {
     tierCard(),
     card(['Nền logo', h('small', {}, 'bật/tắt để chọn mẫu dùng')],
       field('writer.donors.bgMode', 'Cách chọn', 'select', { options: [['tiers', 'Theo bậc donate'], ['random', 'Ngẫu nhiên'], ['sequential', 'Lần lượt'], ['fixed', 'Cố định 1 mẫu']] }),
-      field('writer.donors.bgFixed', 'Mẫu cố định', 'select', { options: () => cfg.backgrounds.map(b => [b.id, b.name]) }),
+      h('div', { class: 'hint', style: 'margin-top:8px' }, 'Khung dùng cho chế độ Ngẫu nhiên / Lần lượt:'), enabledStrip,
+      h('div', { class: 'btns' }, btn('Mở kho khung…', () => openGallery({ title: 'Chọn các khung được dùng (ngẫu nhiên / lần lượt)', multi: true,
+        selected: cfg.backgrounds.filter(b => b.enabled !== false).map(b => b.id),
+        onDone: (ids) => setPath('backgrounds', cfg.backgrounds.map(b => ({ ...b, enabled: ids.includes(b.id) }))) }), 'pri')),
+      h('div', { class: 'hint', style: 'margin-top:10px' }, 'Khung cho chế độ Cố định 1 mẫu:'), fixedStrip,
+      h('div', { class: 'btns' }, btn('Chọn khung cố định…', () => openGallery({ title: 'Chọn 1 khung cố định', multi: false, selected: [cfg.writer.donors.bgFixed],
+        onDone: (ids) => ids[0] && setPath('writer.donors.bgFixed', ids[0]) }))),
       note('Ảnh logo của bạn (PNG nền trong suốt hoặc nền trắng) được máy "in" bằng mực theo từng đường quét; phần trắng tự thành trong suốt. Để chừa chỗ giữa logo cho tên.'),
-      bgList,
-      h('div', { class: 'btns' }, btn('+ Thêm ảnh logo', () => api.invoke('bg:addImage'), 'pri'))),
+      imgList,
+      h('div', { class: 'btns' }, btn('+ Thêm ảnh logo', () => api.invoke('bg:addImage'))),
+      h('details', { style: 'margin-top:8px' }, h('summary', { class: 'hint', style: 'cursor:pointer' }, 'Chữ riêng cho từng khung mẫu'), tplTexts())),
   ));
+}
+
+// ---------- kho khung (ảnh xem trước)
+const thumbOf = (b, sample) => b.type === 'image' ? Promise.resolve(api.mediaUrl(b.file)) : templateThumb(b, cfg, api, sample);
+function fillStrip(el, ids) {
+  const list = ids.map(id => cfg.backgrounds.find(b => b.id === id)).filter(Boolean);
+  el.replaceChildren(...(list.length ? list.map(b => {
+    const im = h('img', { title: b.name, alt: b.name }); thumbOf(b).then(u => { im.src = u; });
+    return h('div', { class: 'tmini' }, im);
+  }) : [h('span', { class: 'hint' }, 'Chưa chọn khung')]));
+}
+function openGallery({ title, multi, selected, onDone }) {
+  const sel = new Set((selected || []).filter(Boolean));
+  const sampleIn = h('input', { type: 'text', value: 'Phạm Bảo Ngọc', style: 'max-width:220px' });
+  const grid = h('div', { class: 'ggrid' });
+  const count = h('span', { class: 'hint' });
+  const draw = () => {
+    count.textContent = multi ? `Đã chọn ${sel.size} khung` : '';
+    grid.replaceChildren(...cfg.backgrounds.map(b => {
+      const im = h('img', { alt: b.name }); thumbOf(b, sampleIn.value || 'Phạm Bảo Ngọc').then(u => { im.src = u; });
+      const c = h('div', { class: 'gcard' + (sel.has(b.id) ? ' on' : ''), title: b.name, onclick: () => {
+        if (multi) { sel.has(b.id) ? sel.delete(b.id) : sel.add(b.id); c.classList.toggle('on'); count.textContent = `Đã chọn ${sel.size} khung`; }
+        else { sel.clear(); sel.add(b.id); grid.querySelectorAll('.gcard').forEach(x => x.classList.remove('on')); c.classList.add('on'); }
+      } }, h('div', { class: 'gimg' }, im), h('div', { class: 'gname' }, b.name), h('span', { class: 'gtick' }, '✓'),
+        b.type === 'image' ? h('span', { class: 'gtag' }, 'ảnh') : null);
+      return c;
+    }));
+  };
+  const close = () => { ov.remove(); off(); };
+  const ov = h('div', { class: 'modal' }, h('div', { class: 'mbox' },
+    h('div', { class: 'mhead' }, h('b', {}, title || 'Kho khung'), h('span', { class: 'grow' }),
+      h('label', { class: 'hint' }, 'Tên mẫu '), sampleIn, btn('Xem', draw, 'sm'), btn('+ Thêm ảnh logo', async () => { await api.invoke('bg:addImage'); }, 'sm')),
+    grid,
+    h('div', { class: 'mfoot' }, count, h('span', { class: 'grow' }),
+      multi ? btn('Bỏ chọn hết', () => { sel.clear(); draw(); }, 'sm') : null,
+      btn('Huỷ', close), btn('Xong', () => { onDone([...sel].filter(id => cfg.backgrounds.some(b => b.id === id))); close(); }, 'pri'))));
+  ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  const off = api.on('config', () => setTimeout(draw, 0));
+  document.body.append(ov); draw();
+}
+// chữ riêng cho từng khung mẫu (để trống = dùng chữ chung)
+function tplTexts() {
+  const box = h('div', { class: 'list', style: 'max-height:360px;margin-top:6px' });
+  const draw = () => box.replaceChildren(...cfg.backgrounds.map((b, i) => {
+    if (b.type === 'image') return null;
+    const upd = (k, v) => { const arr = structuredClone(cfg.backgrounds); arr[i][k] = v; setPath('backgrounds', arr); };
+    const t = (k, ph) => { const x = h('input', { type: 'text', placeholder: ph }); x.value = b[k] ?? ''; x.onchange = () => upd(k, x.value === '' ? undefined : x.value); return x; };
+    return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' }, h('span', {}, b.name),
+      h('div', { class: 'ctl', style: 'gap:6px;margin-top:4px' }, t('top', 'chữ trên'), t('bottom', 'chữ dưới'), t('small', 'chữ nhỏ')));
+  }).filter(Boolean));
+  draw(); binds.push(draw);
+  return box;
 }
 
 // ---------- bậc donate
@@ -274,17 +328,13 @@ function tierCard() {
       const on = h('input', { type: 'checkbox' }); on.checked = t.enabled !== false; on.onchange = () => upd('enabled', on.checked);
       const nm = h('input', { type: 'text', value: t.name || '', style: 'max-width:120px' }); nm.onchange = () => upd('name', nm.value);
       const mn = h('input', { type: 'number', value: t.min ?? 1, min: 0, style: 'max-width:90px' }); mn.onchange = () => upd('min', Math.max(0, +mn.value || 0));
-      const chips = cfg.backgrounds.map(b => {
-        const cb = h('input', { type: 'checkbox' }); cb.checked = (t.bgs || []).includes(b.id);
-        cb.onchange = () => { const set = new Set(t.bgs || []); cb.checked ? set.add(b.id) : set.delete(b.id); upd('bgs', [...set]); };
-        return h('label', { class: 'tag', style: 'display:inline-flex;gap:5px;align-items:center;cursor:pointer;padding:3px 8px' }, cb,
-          b.type === 'image' ? h('img', { src: api.mediaUrl(b.file), style: 'width:28px;height:18px;object-fit:contain;background:#e9dfca;border-radius:3px' }) : null, b.name);
-      });
+      const strip = h('div', { class: 'thumbstrip' }); fillStrip(strip, t.bgs || []);
+      const pick = btn('Chọn khung…', () => openGallery({ title: `Khung cho ${t.name || 'bậc'} (từ ${t.min ?? 0} xu)`, multi: true, selected: t.bgs || [], onDone: (ids) => upd('bgs', ids) }), 'sm pri');
       return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch;gap:6px' },
         h('div', { class: 'ctl', style: 'gap:8px;flex-wrap:wrap' }, h('label', { class: 'switch' }, on, h('span')), nm,
           h('span', { class: 'hint' }, 'từ'), mn, h('span', { class: 'hint' }, 'xu trở lên'), h('span', { class: 'grow' }),
           btn('Xoá', () => save(cfg.writer.donors.tiers.filter((_, k) => k !== i)), 'sm red')),
-        h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, ...chips),
+        h('div', { class: 'ctl', style: 'gap:8px;align-items:flex-start' }, strip, pick),
         (t.bgs || []).length ? null : h('div', { class: 'hint', style: 'color:var(--warn)' }, 'Chưa chọn logo – bậc này sẽ dùng các logo đang bật'));
     }));
   };

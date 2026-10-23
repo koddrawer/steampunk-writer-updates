@@ -27,6 +27,12 @@ module.exports = {
     { id: 'tpl-emblem', name: 'Tên lớn + huy hiệu chữ lồng', type: 'template', template: 'emblem', enabled: true },
     { id: 'tpl-monogram', name: 'Chữ ký + dấu chữ lồng', type: 'template', template: 'monogram', enabled: true },
     { id: 'tpl-roundel', name: 'Con dấu tròn chữ quanh vành', type: 'template', template: 'roundel', enabled: true },
+    { id: 'tpl-wave', name: 'Dải lụa uốn sóng + lá acanthus', type: 'template', template: 'wave', enabled: true },
+    { id: 'tpl-scroll', name: 'Cuộn giấy cổ hai đầu cuộn', type: 'template', template: 'scroll', enabled: true },
+    { id: 'tpl-pennant', name: 'Băng rôn thẳng + viền hạt', type: 'template', template: 'pennant', enabled: true },
+    { id: 'tpl-cartouche', name: 'Khung hoa văn + băng rôn vòm', type: 'template', template: 'cartouche', enabled: true },
+    { id: 'tpl-medallion', name: 'Bảng ngang + huy chương', type: 'template', template: 'medallion', enabled: true },
+    { id: 'tpl-heritage', name: 'Nhãn cổ điển vương miện', type: 'template', template: 'heritage', enabled: true },
   ],
   writer: {
     maxSpeedup: 5,
