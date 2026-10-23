@@ -41,6 +41,28 @@ class JobQueue {
     while (this.names.length > max) { this.names.shift(); this.stats.dropped++; }   // bỏ người cũ nhất, giữ người mới vào
     this.onChange();
   }
+  // viết nội dung bình luận (mỗi bình luận là một dòng mới, có lọc từ cấm và giãn cách theo người)
+  addComment(u, comment, force) {
+    const n = this.cfg().writer.names; const c = n.comments || {};
+    if (!force && (!c.enabled || !n.enabled)) return false;
+    let text = String(comment || '').replace(/\s+/g, ' ').trim();
+    if ([...text].length < (c.minChars ?? 2)) return false;
+    const low = text.toLowerCase();
+    if ((c.blockWords || []).some(w => w && low.includes(String(w).toLowerCase()))) return false;
+    const key = (u.uniqueId || u.nickname || '').toLowerCase(); if (!key) return false;
+    const now = Date.now(); this.cmtSeen = this.cmtSeen || new Map();
+    if (!force && now - (this.cmtSeen.get(key) || 0) < (c.cooldownSec ?? 20) * 1000) return false;
+    if (this.names.filter(j => j.key === key && j.source === 'comment').length >= 2) return false;
+    this.cmtSeen.set(key, now);
+    const max = c.maxChars || 80; if ([...text].length > max) text = [...text].slice(0, max).join('').trim() + '…';
+    const name = [...this.label(u, n.display)].slice(0, n.maxChars || 18).join('');
+    const out = c.format === 'comment' ? text : c.format === 'comment_name' ? `“${text}” — ${name}` : `${name}: ${text}`;
+    this.names.push({ id: this.nextId++, type: 'name', key, name, text: out, alt: u.uniqueId, source: 'comment', t: now });
+    this.interruptQuote();
+    while (this.names.length > (n.maxQueue || 40)) { this.names.shift(); this.stats.dropped++; }
+    this.onChange();
+    return true;
+  }
   addDonor(g, force) {
     const c = this.cfg().writer.donors;
     const total = (g.diamonds || 0) * (g.count || 1);
@@ -79,7 +101,8 @@ class JobQueue {
   makeQuote(force) {
     const q = this.cfg().writer.quotes || {}; const now = Date.now();
     if (!force && (!q.enabled || now - this.lastActivity < (q.afterSec ?? 20) * 1000 || now - this.lastQuoteEnd < (q.gapSec ?? 8) * 1000)) return null;
-    const list = (q.list || []).map(x => String(x).trim()).filter(Boolean);
+    const lang = q.language || 'both';
+    const list = [...(lang !== 'en' ? q.list || [] : []), ...(lang !== 'vi' ? q.listEn || [] : [])].map(x => String(x).trim()).filter(Boolean);
     if (!list.length) return null;
     let i;
     if (q.random !== false) {

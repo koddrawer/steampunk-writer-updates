@@ -272,7 +272,7 @@ export class Writer {
     if (!ok) { this.busy = false; this.job = null; return false; }
     if (this.abortPending) { this.abortPending = false; this.steps = [{ k: 'done' }]; this.restoreLayout(); this.hooks.onJobStart && this.hooks.onJobStart(job); return true; }
     const W = this.cfg().writer;
-    const sec = job.type === 'donor' ? W.donors.maxSec : job.type === 'quote' ? W.quotes?.maxSec : W.names.maxSec;
+    const sec = job.type === 'donor' ? W.donors.maxSec : job.type === 'quote' ? W.quotes?.maxSec : job.source === 'comment' ? (W.names.comments?.maxSec ?? W.names.maxSec) : W.names.maxSec;
     this.fitTime(sec);
     this.steps.push({ k: 'done' });
     this.hooks.onJobStart && this.hooks.onJobStart(job);

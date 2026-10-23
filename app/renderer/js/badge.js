@@ -9,7 +9,44 @@ export const TEMPLATES = {
   frame:  'Khung nhãn cổ điển',
   script: 'Chữ ký hoa mỹ + nơ',
   crest:  'Huy hiệu khiên + vòng nguyệt quế',
+  ticket: 'Nhãn vé góc vát + tab chữ dưới',
+  arch:   'Chữ vòm + vương miện hoa văn',
+  emblem: 'Tên lớn + huy hiệu tròn chữ lồng',
+  monogram: 'Chữ ký + phụ đề + dấu chữ lồng nhỏ',
+  roundel: 'Con dấu tròn chữ quanh vành',
 };
+
+// chữ lồng: chữ cái đầu của từ đầu và từ cuối
+function initials(name) {
+  const w = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return '';
+  const a = [...w[0]][0] || '', b = w.length > 1 ? ([...w[w.length - 1]][0] || '') : '';
+  return (a + b).toLocaleUpperCase('vi');
+}
+// hoa văn đối xứng hai bên (vương miện / gạch chân)
+function filigree(cx, cy, span, amp, up = 1) {
+  const out = [];
+  for (const d of [-1, 1]) {
+    out.push(swash(cx + d * 0.012, cy, span, amp, d, up));
+    out.push(swash(cx + d * 0.01, cy, span * 0.55, amp * 0.6, d, -up));
+  }
+  return out;
+}
+function chamferRect(w, h, c, notch) {
+  const p = [[-w + c, h], [w - c, h], [w, h - c]];
+  if (notch) p.push([w, notch], ...arc(w, 0, notch, Math.PI / 2, Math.PI * 1.5).slice(1, -1), [w, -notch]);
+  p.push([w, -h + c], [w - c, -h], [-w + c, -h], [-w, -h + c]);
+  if (notch) p.push([-w, -notch], ...arc(-w, 0, notch, -Math.PI / 2, Math.PI / 2).slice(1, -1), [-w, notch]);
+  p.push([-w, h - c]);
+  return close(p);
+}
+const scaleP = (poly, sx, sy) => poly.map(([x, y]) => [x * sx, y * sy]);
+function roundRect(cx, cy, w, h, r) {
+  const p = [];
+  for (const [x, y, a0] of [[cx + w / 2 - r, cy + h / 2 - r, 0], [cx - w / 2 + r, cy + h / 2 - r, Math.PI / 2], [cx - w / 2 + r, cy - h / 2 + r, Math.PI], [cx + w / 2 - r, cy - h / 2 + r, Math.PI * 1.5]])
+    p.push(...arc(x, y, r, a0, a0 + Math.PI / 2, 8));
+  return close(p);
+}
 
 // ---------------- hình cơ bản
 const circle = (cx, cy, r, n) => {
@@ -91,9 +128,9 @@ function textCentered(chain, text, em, cx, cy, nib, fill = 'hatch') {
   const bb = L.bbox; const ox = cx - (bb.x0 + bb.x1) / 2; const oy = cy - L.capHeight / 2;
   return textToStrokes(L, { nib, fill, place: ([x, y]) => [x + ox, y + oy] });
 }
-function textOnArc(chain, text, em, cx, cy, r, top, nib) {
+function textOnArc(chain, text, em, cx, cy, r, top, nib, ls = 0.08) {
   if (!text) return [];
-  const L = layoutText(chain, text, em, em * 0.08);
+  const L = layoutText(chain, text, em, em * ls);
   const W = L.width; const out = [];
   for (const g of L.glyphs) {
     const xm = (g.x0 + g.x1) / 2;
@@ -197,6 +234,107 @@ export function buildBadge(tpl, o) {
     add(deco, ...rb.strokes);
     add(deco, ...textCentered(decoChain, bt, 0.024 * S, 0, -H / 2 + 0.046 * S, nibDeco));
     add(deco, ...textCentered(decoChain, small, 0.018 * S, 0, -0.105 * S, nibDeco));
+  }
+
+  else if (tpl === 'ticket') {
+    // nhãn hình vé: góc vát, khuyết tròn hai bên, viền đôi, tab chữ ở mép dưới
+    const w = W / 2, h = H / 2, c = 0.035 * S, nt = 0.03 * S;
+    const bt = (bottom || '').toUpperCase();
+    const bw = layoutText(decoChain, bt, 0.022 * S, 0.003 * S).width + 0.06 * S;
+    const tab = roundRect(0, -h, Math.max(0.12 * S, bw), 0.05 * S, 0.018 * S);
+    masks.push(tab);
+    const outer = chamferRect(w, h, c, nt), inner = scaleP(chamferRect(w, h, c, nt), 1 - 0.014 * S / w, 1 - 0.014 * S / h);
+    add(deco, ...clip([outer, inner], masks), tab);
+    add(deco, ...textCentered(decoChain, bt, 0.022 * S, 0, -h - 0.002 * S, nibDeco));
+    const tt = (top || '').toUpperCase(); const tl = layoutText(decoChain, tt, 0.024 * S, 0.003 * S).width;
+    const ty = h - 0.06 * S;
+    add(deco, ...textCentered(decoChain, tt, 0.024 * S, 0, ty, nibDeco));
+    for (const d of [-1, 1]) {
+      add(deco, line(d * (tl / 2 + 0.015 * S), ty, d * (w - 0.07 * S), ty));
+      add(deco, ...hatchFill(diamond(d * (w - 0.06 * S), ty, 0.007 * S, 0.006 * S), nibDeco));
+    }
+    for (const [sx, sy] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) add(deco, ...hatchFill(star(sx * (w - 0.045 * S), sy * (h - 0.045 * S), 0.009 * S), nibDeco));
+    const em = fitEm(nameChain, name, W - 0.16 * S, 0.1 * S);
+    add(names, ...textCentered(nameChain, name, em, 0, 0.01 * S, nibName));
+    const ly = -0.07 * S;
+    add(deco, line(-w * 0.55, ly, -0.02 * S, ly), line(0.02 * S, ly, w * 0.55, ly), ...hatchFill(diamond(0, ly, 0.01 * S, 0.007 * S), nibDeco));
+    add(deco, ...textCentered(decoChain, small, 0.02 * S, 0, -0.1 * S, nibDeco));
+  }
+
+  else if (tpl === 'arch') {
+    // tên uốn vòm, vương miện hoa văn phía trên, dải chữ cong phía dưới
+    const em = fitEm(nameChain, name, W * 0.8, 0.095 * S);
+    const R = Math.max(W * 0.85, 0.35 * S), y0 = -0.01 * S;
+    add(names, ...textOnArc(nameChain, name, em, 0, y0 - R, R, true, nibName, 0));
+    const cap = layoutText(nameChain, name, em).capHeight;
+    const tY = y0 + cap * 1.35 + 0.035 * S;
+    const tt = (top || '').toUpperCase();
+    add(deco, ...textCentered(decoChain, tt, 0.024 * S, 0, tY, nibDeco));
+    add(deco, ...filigree(0, tY + 0.035 * S, 0.12 * S, 0.02 * S, 1));
+    add(deco, ...hatchFill(diamond(0, tY + 0.05 * S, 0.008 * S, 0.012 * S), nibDeco));
+    const sm = (small || '').toUpperCase(); const sl = layoutText(decoChain, sm, 0.02 * S, 0.003 * S).width; const sy = y0 - 0.045 * S;
+    add(deco, ...textCentered(decoChain, sm, 0.02 * S, 0, sy, nibDeco));
+    for (const d of [-1, 1]) add(deco, line(d * (sl / 2 + 0.015 * S), sy, d * W * 0.36, sy), line(d * (sl / 2 + 0.015 * S), sy - 0.006 * S, d * W * 0.3, sy - 0.006 * S));
+    const Rb = 0.42 * S, yb = -H / 2 + 0.03 * S, cyb = yb + Rb, dl = (W * 0.32) / Rb;
+    const a0 = -Math.PI / 2 - dl, a1 = -Math.PI / 2 + dl;
+    const o1 = arc(0, cyb, Rb + 0.008 * S, a0, a1), o2 = arc(0, cyb, Rb - 0.042 * S, a0, a1);
+    add(deco, o1, o2, line(...o1[0], ...o2[0]), line(...o1[o1.length - 1], ...o2[o2.length - 1]));
+    add(deco, ...textOnArc(decoChain, (bottom || '').toUpperCase(), 0.022 * S, 0, cyb, Rb - 0.034 * S, false, nibDeco));
+    for (const d of [-1, 1]) { const [ex, ey] = (d < 0 ? o1[0] : o1[o1.length - 1]); add(deco, curl(ex + d * 0.018 * S, ey + 0.012 * S, 0.012 * S, 1.2, d < 0 ? 0 : Math.PI, d)); }
+  }
+
+  else if (tpl === 'emblem') {
+    // tên lớn phía trên, huy hiệu tròn có chữ lồng ở giữa phía dưới, chữ chạy quanh đáy huy hiệu
+    const w = W / 2, h = H / 2;
+    const tt = (top || '').toUpperCase(); const tl = layoutText(decoChain, tt, 0.022 * S, 0.003 * S).width; const ty = h - 0.03 * S;
+    add(deco, ...textCentered(decoChain, tt, 0.022 * S, 0, ty, nibDeco));
+    for (const d of [-1, 1]) add(deco, line(d * (tl / 2 + 0.015 * S), ty, d * w * 0.7, ty));
+    const em = fitEm(nameChain, name, W - 0.06 * S, 0.1 * S);
+    add(names, ...textCentered(nameChain, name, em, 0, h * 0.4, nibName));
+    add(deco, ...textCentered(decoChain, small, 0.02 * S, 0, h * 0.08, nibDeco));
+    const r = 0.075 * S, ecy = -h * 0.45;
+    add(deco, circle(0, ecy, r), circle(0, ecy, r - 0.006 * S));
+    const mono = initials(name);
+    if (mono) add(deco, ...textCentered(decoChain, mono, fitEm(decoChain, mono, r * 1.25, r * 0.9), 0, ecy, nibDeco));
+    add(deco, ...textOnArc(decoChain, (bottom || '').toUpperCase(), 0.02 * S, 0, ecy, r + 0.034 * S, false, nibDeco));
+    for (const d of [-1, 1]) {
+      add(deco, line(d * (r + 0.012 * S), ecy, d * (w - 0.04 * S), ecy), ...hatchFill(diamond(d * (w - 0.03 * S), ecy, 0.009 * S, 0.007 * S), nibDeco));
+      add(deco, ...hatchFill(star(d * (r + 0.05 * S), ecy + 0.03 * S, 0.008 * S), nibDeco));
+    }
+  }
+
+  else if (tpl === 'monogram') {
+    // chữ ký lớn, phụ đề chữ in, dấu chữ lồng nhỏ phía dưới hai bên có chữ
+    const w = W / 2, h = H / 2;
+    add(deco, ...filigree(0, h - 0.04 * S, Math.min(w * 0.7, 0.2 * S), 0.022 * S, 1));
+    const em = fitEm(nameChain, name, W - 0.06 * S, 0.11 * S);
+    add(names, ...textCentered(nameChain, name, em, 0, 0.05 * S, nibName));
+    const tt = (top || '').toUpperCase();
+    add(deco, ...textCentered(decoChain, tt, 0.022 * S, 0, -0.045 * S, nibDeco));
+    const r = 0.045 * S, mcy = -h + 0.065 * S;
+    add(deco, circle(0, mcy, r), circle(0, mcy, r - 0.005 * S));
+    const mono = initials(name);
+    if (mono) add(deco, ...textCentered(decoChain, mono, fitEm(decoChain, mono, r * 1.2, r * 0.85), 0, mcy, nibDeco));
+    for (const [d, t] of [[-1, (bottom || '').toUpperCase()], [1, (small || '').toUpperCase()]]) {
+      const ew = fitEm(decoChain, t || 'X', 0.18 * S, 0.018 * S);
+      add(deco, ...textCentered(decoChain, t, ew, d * (r + 0.11 * S), mcy, nibDeco));
+      add(deco, line(d * (r + 0.008 * S), mcy + 0.022 * S, d * (r + 0.2 * S), mcy + 0.022 * S));
+    }
+  }
+
+  else if (tpl === 'roundel') {
+    // con dấu tròn: chữ chạy quanh vành trên và dưới, sao hai bên, tên giữa
+    const R = 0.17 * S;
+    add(deco, circle(0, 0, R), circle(0, 0, R - 0.006 * S), circle(0, 0, R - 0.05 * S), circle(0, 0, R - 0.057 * S));
+    add(deco, ...textOnArc(decoChain, (top || '').toUpperCase(), 0.03 * S, 0, 0, R - 0.037 * S, true, nibDeco));
+    add(deco, ...textOnArc(decoChain, (bottom || '').toUpperCase(), 0.026 * S, 0, 0, R - 0.046 * S, false, nibDeco));
+    for (const d of [-1, 1]) add(deco, ...hatchFill(star(d * (R - 0.028 * S), 0, 0.01 * S), nibDeco));
+    const inner = (R - 0.07 * S) * 2;
+    const em = fitEm(nameChain, name, inner * 0.92, 0.065 * S);
+    add(names, ...textCentered(nameChain, name, em, 0, 0.004 * S, nibName));
+    for (const x of [-0.025, 0, 0.025]) add(deco, ...hatchFill(star(x * S, 0.06 * S + (x === 0 ? 0.006 * S : 0), 0.008 * S), nibDeco));
+    add(deco, line(-0.05 * S, -0.045 * S, 0.05 * S, -0.045 * S));
+    add(deco, ...textCentered(decoChain, small, 0.018 * S, 0, -0.07 * S, nibDeco));
   }
 
   else { // crest

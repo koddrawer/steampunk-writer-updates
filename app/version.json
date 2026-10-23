@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minShell": "1.0.0",
-  "notes": "Chỉnh thời gian viết tên / quote / vẽ logo (tối đa 10 giây, tính cả cuộn giấy); logo theo bậc donate do bạn chọn; quote viết dở bị ngắt sẽ được cuộn khuất hẳn rồi mới viết tên",
+  "notes": "Thêm quote tiếng Anh (chọn Việt/Anh/cả hai); thêm 5 khung logo mới theo ảnh tham chiếu (nhãn vé, chữ vòm, huy hiệu chữ lồng, chữ ký + dấu chữ lồng, con dấu chữ quanh vành); tuỳ chọn viết nội dung bình luận",
   "date": "2026-10-23"
 }

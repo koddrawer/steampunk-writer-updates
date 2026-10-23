@@ -22,6 +22,11 @@ module.exports = {
     { id: 'tpl-frame', name: 'Khung nhãn cổ điển', type: 'template', template: 'frame', enabled: true },
     { id: 'tpl-script', name: 'Chữ ký hoa mỹ + nơ', type: 'template', template: 'script', enabled: true },
     { id: 'tpl-crest', name: 'Huy hiệu khiên', type: 'template', template: 'crest', enabled: true },
+    { id: 'tpl-ticket', name: 'Nhãn vé góc vát', type: 'template', template: 'ticket', enabled: true },
+    { id: 'tpl-arch', name: 'Chữ vòm + vương miện', type: 'template', template: 'arch', enabled: true },
+    { id: 'tpl-emblem', name: 'Tên lớn + huy hiệu chữ lồng', type: 'template', template: 'emblem', enabled: true },
+    { id: 'tpl-monogram', name: 'Chữ ký + dấu chữ lồng', type: 'template', template: 'monogram', enabled: true },
+    { id: 'tpl-roundel', name: 'Con dấu tròn chữ quanh vành', type: 'template', template: 'roundel', enabled: true },
   ],
   writer: {
     maxSpeedup: 5,
@@ -37,6 +42,11 @@ module.exports = {
         like: '{name} · {likes} tim',
         follow: '{name} đã theo dõi',
         share: '{name} đã chia sẻ',
+      },
+      // viết nội dung bình luận
+      comments: {
+        enabled: false, format: 'name_comment', maxChars: 80, minChars: 2, cooldownSec: 20, maxSec: 8,
+        blockWords: ['http', 'www.', '.com', 'zalo', 'sđt'],
       },
     },
     quotes: {
@@ -58,6 +68,25 @@ module.exports = {
         'Hạnh phúc không phải đích đến, mà là hành trình',
         'Hãy sống như những dòng mực: để lại dấu ấn đẹp',
         'Cảm ơn bạn đã ghé thăm, chúc bạn một ngày thật vui',
+      ],
+      language: 'both',   // vi | en | both
+      listEn: [
+        'Well begun is half done — Aristotle',
+        'The journey of a thousand miles begins with a single step — Lao Tzu',
+        'Knowledge is power — Francis Bacon',
+        'Fortune favors the bold — Virgil',
+        'The pen is mightier than the sword — Edward Bulwer-Lytton',
+        'Simplicity is the ultimate sophistication — Leonardo da Vinci',
+        'What we think, we become — Buddha',
+        'Do what you can, with what you have, where you are — Theodore Roosevelt',
+        'Write it on your heart that every day is the best day in the year — Ralph Waldo Emerson',
+        'Actions speak louder than words — Proverb',
+        'Where there is a will, there is a way — Proverb',
+        'Every cloud has a silver lining — Proverb',
+        'Little by little, one travels far — Proverb',
+        'All that glitters is not gold — William Shakespeare',
+        'Be the reason someone smiles today',
+        'Thank you for stopping by. Have a wonderful day!',
       ],
     },
     donors: {

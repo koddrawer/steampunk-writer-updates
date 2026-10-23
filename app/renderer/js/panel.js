@@ -165,6 +165,14 @@ function renderNames() {
       field('writer.names.maxChars', 'Số ký tự tối đa', 'number', { min: 4, max: 40 }),
       field('writer.names.speed', 'Tốc độ ngòi', 'range', { min: 0.1, max: 1.5, step: 0.05, unit: ' m/s' }),
       field('writer.names.maxSec', 'Thời gian viết 1 tên (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây', tip: 'Tên dài hơn sẽ được viết nhanh hơn để xong trong thời gian này' })),
+    card(['Viết nội dung bình luận', h('small', {}, 'mỗi bình luận viết thành dòng riêng')],
+      field('writer.names.comments.enabled', 'Bật viết nội dung bình luận', 'bool', { tip: 'Bật thì bình luận được viết ra giấy theo kiểu bên dưới (thay cho mẫu "Người bình luận")' }),
+      field('writer.names.comments.format', 'Kiểu viết', 'select', { options: [['name_comment', 'Tên: nội dung'], ['comment_name', '“Nội dung” — Tên'], ['comment', 'Chỉ nội dung']] }),
+      field('writer.names.comments.maxChars', 'Dài tối đa', 'number', { unit: 'ký tự', min: 10, max: 200, tip: 'Dài hơn sẽ cắt và thêm …; câu dài tự xuống tối đa 3 dòng' }),
+      field('writer.names.comments.minChars', 'Bỏ qua bình luận ngắn hơn', 'number', { unit: 'ký tự', min: 1 }),
+      field('writer.names.comments.cooldownSec', 'Mỗi người cách nhau ít nhất', 'number', { unit: 'giây', min: 0 }),
+      field('writer.names.comments.maxSec', 'Thời gian viết 1 bình luận (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây' }),
+      field('writer.names.comments.blockWords', 'Từ cấm (mỗi dòng 1 từ – có từ này thì không viết)', 'lines', { full: true, rows: 3 })),
     card(['Nội dung viết kèm tên', h('small', {}, 'mỗi dòng = 1 mẫu, chọn ngẫu nhiên')],
       note('Mã thay thế: {name} tên · {comment} nội dung bình luận · {likes} số tim. Ví dụ: "Chào {name}!" hoặc "{name}: {comment}". Câu dài tự xuống dòng (tối đa 3 dòng).'),
       field('writer.names.templates.join', 'Người vào phòng', 'textarea', { full: true, rows: 2 }),
@@ -347,7 +355,7 @@ function renderVStat(s) {
 function renderQuotes() {
   const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.quotes.fontId)};white-space:normal;font-size:28px` }, 'Có công mài sắt, có ngày nên kim');
   binds.push(() => { prev.style.fontFamily = ff(cfg.writer.quotes.fontId); });
-  const cnt = h('span', { class: 'hint' }); const upd = () => { cnt.textContent = `${(cfg.writer.quotes.list || []).length} câu`; }; upd(); binds.push(upd);
+  const cnt = h('span', { class: 'hint' }); const upd = () => { cnt.textContent = `${(cfg.writer.quotes.list || []).length} câu Việt · ${(cfg.writer.quotes.listEn || []).length} câu Anh`; }; upd(); binds.push(upd);
   $('#tab-quotes').replaceChildren(h('div', { class: 'grid' },
     card('Khi vắng người',
       note('Khi không có ai vào, bình luận hay tặng quà trong một khoảng thời gian, máy tự viết các câu quote. Có người mới là dừng câu đang viết để viết tên.'),
@@ -356,6 +364,7 @@ function renderQuotes() {
       field('writer.quotes.gapSec', 'Nghỉ giữa 2 câu', 'number', { unit: 'giây', min: 0 }),
       field('writer.quotes.interrupt', 'Có người mới thì dừng câu đang viết', 'bool'),
       field('writer.quotes.random', 'Chọn câu ngẫu nhiên', 'bool', { tip: 'Tắt = lần lượt theo danh sách' }),
+      field('writer.quotes.language', 'Ngôn ngữ quote', 'select', { options: [['both', 'Tiếng Việt + Tiếng Anh'], ['vi', 'Chỉ tiếng Việt'], ['en', 'Chỉ tiếng Anh']] }),
       h('div', { class: 'btns' }, btn('Viết 1 câu ngay', () => api.invoke('test:quote'), 'pri'))),
     card('Kiểu chữ quote', prev,
       field('writer.quotes.fontId', 'Font', 'select', { options: fontOptions }),
@@ -369,7 +378,8 @@ function renderQuotes() {
       field('writer.quotes.maxSec', 'Thời gian viết 1 câu (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây' })),
     card(['Danh sách quote', cnt],
       note('Mỗi dòng 1 câu. Muốn ghi tác giả thì thêm " — Tên tác giả" ở cuối dòng.'),
-      field('writer.quotes.list', 'Danh sách', 'lines', { full: true, rows: 16 })),
+      field('writer.quotes.list', 'Danh sách tiếng Việt', 'lines', { full: true, rows: 12 }),
+      field('writer.quotes.listEn', 'Danh sách tiếng Anh (English)', 'lines', { full: true, rows: 12 })),
   ));
 }
 
