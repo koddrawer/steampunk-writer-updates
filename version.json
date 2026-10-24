@@ -1,6 +1,6 @@
 {
-  "version": "1.8.0",
+  "version": "1.8.1",
   "minShell": "1.0.0",
-  "notes": "Camera bám ngòi bút sát hơn (trễ ~0,14 giây, chỉnh được ở Hiển thị & Camera), viết xong camera đứng yên để người xem đọc chữ. Thêm chế độ Tặng quà nhỏ + bình luận (thẻ Donate): tặng 1 xu (tuỳ chỉnh) rồi bình luận ngay sẽ được viết tên kèm nội dung; quá 30 giây không bình luận thì viết tên + khung như donate thường. Thêm hiệu ứng chữ ánh vàng sau khi viết xong (thẻ Viết tên).",
-  "date": "2026-10-24"
+  "notes": "Hiệu ứng ánh vàng rõ hơn: chữ chuyển vàng kim đậm, có quầng sáng và vệt sáng quét qua. Thêm nút Xem thử hiệu ứng (thẻ Viết tên, khung đầu tiên). Nút Gửi quà thử + Bình luận thử giờ chạy đúng chế độ quà nhỏ + bình luận.",
+  "date": "2026-10-25"
 }

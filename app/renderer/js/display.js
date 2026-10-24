@@ -197,6 +197,7 @@ api.on('config', (c) => {
 api.on('display:cmd', (m) => {
   if (m.cmd === 'clearPaper') writer.clearPaper();
   if (m.cmd === 'abortJob') writer.abort();
+  if (m.cmd === 'glowTest') { const g = cfg.writer.glow || {}; paper.glow(paper.lastBox, { sec: g.sec ?? 1.8, color: g.color || '#ffc94a', strength: g.strength ?? 1 }); }
   if (m.cmd === 'camera') goCam(m.name || 'main', m.sec ?? 1.2);
   if (m.cmd === 'resetCamera') { const n = m.name || 'main'; camMode = n; tweenCam(DEFAULT_CAMS[n], 1); api.send('display:camera', { name: n, cam: null }); }
   if (m.cmd === 'saveCamera') api.send('display:camera', { name: m.name || 'main', cam: { pos: camera.position.toArray().map(r4), target: controls.target.toArray().map(r4), fov: camera.fov } });

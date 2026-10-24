@@ -75,7 +75,7 @@ class JobQueue {
       if (w.total > (gc.maxDiamonds ?? 1)) { this.releaseWaiting(key0); }   // vượt ngưỡng -> thành donate thường
       return;
     }
-    if (!force && gc.enabled && key0 && total0 >= (gc.minDiamonds ?? 1) && total0 <= (gc.maxDiamonds ?? 1)) {
+    if (force !== true && gc.enabled && key0 && total0 >= (gc.minDiamonds ?? 1) && total0 <= (gc.maxDiamonds ?? 1)) {
       const t = setTimeout(() => this.releaseWaiting(key0), Math.max(3, gc.waitSec ?? 30) * 1000);
       this.waiting.set(key0, { g, total: total0, t, since: Date.now() });
       this.onChange(); return;

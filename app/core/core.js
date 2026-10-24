@@ -246,11 +246,11 @@ module.exports = async function start(ctx) {
     'queue:clear': (which) => queue.clear(which),
     'queue:pause': (v) => queue.setPaused(v),
     'test:join': (name) => { const u = { uniqueId: 'test_' + Math.random().toString(36).slice(2, 7), nickname: name || 'Khách ' + Math.floor(Math.random() * 999) }; addLog('join', `[TEST] ${u.nickname} vào phòng`); video.onJoin(u); queue.activity(); queue.addName(u, 'join', true); },
-    'test:chat': (name, text) => { const u = { uniqueId: 'test_' + (name || 'chat').replace(/\s/g, ''), nickname: name || 'Người bình luận' }; addLog('chat', `[TEST] ${u.nickname}: ${text}`); video.onActivity(); queue.activity(); if (cfg.writer.names.comments && cfg.writer.names.comments.enabled) queue.addComment(u, text || '', true); else queue.addName(u, 'chat', true, { comment: text || '' }); },
+    'test:chat': (name, text) => { const u = { uniqueId: 'test_' + (name || 'chat').replace(/\s/g, ''), nickname: name || 'Người bình luận' }; addLog('chat', `[TEST] ${u.nickname}: ${text}`); video.onActivity(); queue.activity(); if (queue.giftComment(u, text)) return; if (cfg.writer.names.comments && cfg.writer.names.comments.enabled) queue.addComment(u, text || '', true); else queue.addName(u, 'chat', true, { comment: text || '' }); },
     'test:like': (name, n) => { const u = { uniqueId: 'test_' + (name || 'like').replace(/\s/g, ''), nickname: name || 'Người thả tim' }; addLog('like', `[TEST] ${u.nickname} thả ${n || 10} tim`); queue.activity(); tiktokHandlers.like(u, n || 10); },
     'test:quote': () => queue.forceQuote(),
     'test:gift': (o = {}) => { const g = { user: { uniqueId: 'test_' + (o.name || 'donor').replace(/\s/g, ''), nickname: o.name || 'Người tặng quà' }, gift: o.gift || 'Rose', count: o.count || 1, diamonds: o.diamonds ?? 1 };
-      addLog('gift', `[TEST] ${g.user.nickname} tặng ${g.gift} x${g.count} (${g.diamonds * g.count} xu)`); video.onGift(g); queue.activity(); queue.addDonor(g, true); },
+      addLog('gift', `[TEST] ${g.user.nickname} tặng ${g.gift} x${g.count} (${g.diamonds * g.count} xu)`); video.onGift(g); queue.activity(); queue.addDonor(g, 'test'); },
     'tiktok:connect': (u) => tiktok.connect(u),
     'tiktok:disconnect': () => tiktok.disconnect(),
     'tiktok:status': () => tiktok.status,

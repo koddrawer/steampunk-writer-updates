@@ -48,14 +48,16 @@ export class Paper {
           // hiệu ứng ánh vàng sau khi viết xong: chữ chuyển sang vàng kim, có vệt sáng quét trái -> phải rồi tắt dần
           if (glowT >= 0.0) {
             vec2 iuv = vec2(vInkUv.x, vInkUv.y + inkShift);
-            vec2 m2 = smoothstep(glowRect.xy - 0.004, glowRect.xy, iuv) * (1.0 - smoothstep(glowRect.zw, glowRect.zw + 0.004, iuv));
+            vec2 m2 = smoothstep(glowRect.xy - 0.02, glowRect.xy, iuv) * (1.0 - smoothstep(glowRect.zw, glowRect.zw + 0.02, iuv));
             float inR = m2.x * m2.y;
-            float env = sin(3.14159 * clamp(glowT, 0.0, 1.0));
-            float bx = mix(glowRect.x - 0.06, glowRect.z + 0.06, clamp(glowT * 1.25 - 0.1, 0.0, 1.0));
-            float band = exp(-pow((vInkUv.x - bx) / 0.035, 2.0));
+            float gt = clamp(glowT, 0.0, 1.0);
+            float env = smoothstep(0.0, 0.12, gt) * (1.0 - smoothstep(0.65, 1.0, gt));      // sáng nhanh, giữ, tắt dần
+            float bx = mix(glowRect.x - 0.05, glowRect.z + 0.05, smoothstep(0.05, 0.75, gt));
+            float band = exp(-pow((vInkUv.x - bx) / 0.03, 2.0));                            // vệt sáng quét trái -> phải
+            float halo = texture2D(inkMap, iuv, 4.0).a;                                     // quầng sáng mờ quanh nét chữ
             float gk = inR * inkA * glowAmt;
-            diffuseColor.rgb = mix(diffuseColor.rgb, glowCol * vec3(0.62, 0.48, 0.22), min(1.0, gk * env * 1.2));
-            vGlowE = glowCol * gk * env * (0.18 + band * 1.3);
+            diffuseColor.rgb = mix(diffuseColor.rgb, glowCol * vec3(0.62, 0.40, 0.10), min(1.0, gk * env * 1.4));
+            vGlowE = glowCol * env * glowAmt * inR * (inkA * (0.05 + band * 1.0) + halo * 0.22 * (0.4 + band));
           }`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           totalEmissiveRadiance += vGlowE;`)
@@ -104,7 +106,7 @@ export class Paper {
       c.restore();
       c.clearRect(0, 0, this.W, px);
       this.shiftRem -= px / this.ppm;
-      for (const b of [this.bb, this.glowBox]) if (b) { b.y0 += px; b.y1 += px; }
+      for (const b of [this.bb, this.glowBox, this.lastBox]) if (b) { b.y0 += px; b.y1 += px; }
       this.dirty = true;
     }
     this.syncUniforms();
@@ -114,11 +116,11 @@ export class Paper {
     const off = this.s / this.tile;
     if (this.mat) for (const t of [this.mat.map, this.mat.normalMap]) if (t) t.offset.y = off;
   }
-  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; this.glowBox = null; if (this.uniforms) this.uniforms.glowT.value = -1; }
+  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; this.glowBox = null; this.lastBox = null; if (this.uniforms) this.uniforms.glowT.value = -1; }
 
   // ghi lại vùng mực của một lượt viết (để làm hiệu ứng ánh vàng)
   trackStart() { this.bb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; }
-  trackStop() { const b = this.bb; this.bb = null; return b && b.x1 > b.x0 ? b : null; }
+  trackStop() { const b = this.bb; this.bb = null; const ok = b && b.x1 > b.x0 ? b : null; if (ok) this.lastBox = { ...ok }; return ok; }
   glow(box, { sec = 1.8, color = '#ffc94a', strength = 1 } = {}) {
     if (!box || !this.uniforms) return;
     this.glowBox = { ...box }; this.glowAge = 0; this.glowSec = Math.max(0.3, sec);
