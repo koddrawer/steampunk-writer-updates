@@ -63,9 +63,47 @@ class JobQueue {
     this.onChange();
     return true;
   }
+  // ---- tặng quà nhỏ + bình luận: giữ người tặng chờ bình luận trong waitSec giây
   addDonor(g, force) {
+    const gc = this.cfg().writer.giftComment || {};
+    const key0 = (g.user.uniqueId || g.user.nickname || '').toLowerCase();
+    const total0 = (g.diamonds || 0) * (g.count || 1);
+    this.waiting = this.waiting || new Map();
+    const w = this.waiting.get(key0);
+    if (w) {                                                       // tặng thêm trong lúc chờ
+      w.total += total0; w.g = { ...g, count: (w.g.count || 1) + (g.count || 1) };
+      if (w.total > (gc.maxDiamonds ?? 1)) { this.releaseWaiting(key0); }   // vượt ngưỡng -> thành donate thường
+      return;
+    }
+    if (!force && gc.enabled && key0 && total0 >= (gc.minDiamonds ?? 1) && total0 <= (gc.maxDiamonds ?? 1)) {
+      const t = setTimeout(() => this.releaseWaiting(key0), Math.max(3, gc.waitSec ?? 30) * 1000);
+      this.waiting.set(key0, { g, total: total0, t, since: Date.now() });
+      this.onChange(); return;
+    }
+    return this.pushDonor(g, force);
+  }
+  releaseWaiting(key) {
+    const w = this.waiting && this.waiting.get(key); if (!w) return;
+    clearTimeout(w.t); this.waiting.delete(key);
+    this.pushDonor({ ...w.g, totalOverride: w.total }, false);
+  }
+  giftComment(u, comment) {
+    const key = (u.uniqueId || u.nickname || '').toLowerCase();
+    const w = this.waiting && this.waiting.get(key); if (!w) return false;
+    let text = String(comment || '').replace(/\s+/g, ' ').trim(); if (!text) return false;
+    clearTimeout(w.t); this.waiting.delete(key);
+    const gc = this.cfg().writer.giftComment || {}; const n = this.cfg().writer.names;
+    const max = gc.maxChars || 80; if ([...text].length > max) text = [...text].slice(0, max).join('').trim() + '…';
+    const name = [...this.label(u, n.display)].slice(0, n.maxChars || 18).join('');
+    const out = (gc.format || '{name}: {comment}').replace(/\{name\}/g, name).replace(/\{comment\}/g, text).replace(/\{gift\}/g, w.g.gift || '').trim();
+    this.names = this.names.filter(j => j.key !== key);
+    this.names.unshift({ id: this.nextId++, type: 'name', key, name, text: out, alt: u.uniqueId, source: 'giftComment', t: Date.now() });
+    this.interruptQuote(); this.onChange();
+    return true;
+  }
+  pushDonor(g, force) {
     const c = this.cfg().writer.donors;
-    const total = (g.diamonds || 0) * (g.count || 1);
+    const total = g.totalOverride ?? (g.diamonds || 0) * (g.count || 1);
     if (!force && (!c.enabled || total < (c.minDiamonds ?? 1))) return;
     const key = (g.user.uniqueId || g.user.nickname || '').toLowerCase();
     const now = Date.now();
@@ -125,6 +163,6 @@ class JobQueue {
   remove(id) { this.donors = this.donors.filter(j => j.id !== id); this.names = this.names.filter(j => j.id !== id); this.onChange(); }
   clear(which) { if (!which || which === 'names') this.names = []; if (!which || which === 'donors') this.donors = []; this.onChange(); }
   setPaused(v) { this.paused = !!v; this.onChange(); }
-  snapshot() { return { donors: this.donors, names: this.names, current: this.current, paused: this.paused, stats: this.stats }; }
+  snapshot() { return { waiting: [...(this.waiting || new Map()).entries()].map(([k, w]) => ({ key: k, name: this.label(w.g.user, 'nickname'), left: Math.max(0, Math.ceil(((this.cfg().writer.giftComment?.waitSec ?? 30) * 1000 - (Date.now() - w.since)) / 1000)) })), donors: this.donors, names: this.names, current: this.current, paused: this.paused, stats: this.stats }; }
 }
 module.exports = { JobQueue };

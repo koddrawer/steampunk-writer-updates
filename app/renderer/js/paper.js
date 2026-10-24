@@ -31,18 +31,34 @@ export class Paper {
     const gTile = 0.32;
     const U = this.uniforms = { inkMap: { value: this.tex }, inkShift: { value: 0 }, inkTint: { value: new THREE.Color(this.ink) },
       grainMap: { value: this.grainTex }, grainRep: { value: new THREE.Vector2(G.SHEET_W / gTile, sheetLen / gTile) }, grainOff: { value: 0 },
-      grainAmt: { value: opts.grain ?? 1 } };
+      grainAmt: { value: opts.grain ?? 1 },
+      glowRect: { value: new THREE.Vector4(0, 0, 0, 0) }, glowT: { value: -1 }, glowCol: { value: new THREE.Color('#ffc94a') }, glowAmt: { value: 1 } };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = 'varying vec2 vInkUv;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vInkUv = uv;');
       sh.fragmentShader = 'uniform sampler2D inkMap; uniform float inkShift; uniform vec3 inkTint; varying vec2 vInkUv;\n' +
-        'uniform sampler2D grainMap; uniform vec2 grainRep; uniform float grainOff; uniform float grainAmt;\n' + sh.fragmentShader
+        'uniform sampler2D grainMap; uniform vec2 grainRep; uniform float grainOff; uniform float grainAmt;\n' +
+        'vec3 vGlowE = vec3(0.0);\n' + 'uniform vec4 glowRect; uniform float glowT; uniform vec3 glowCol; uniform float glowAmt;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `#include <map_fragment>
           vec4 gr = texture2D(grainMap, vec2(vInkUv.x * grainRep.x, vInkUv.y * grainRep.y + grainOff));
           diffuseColor.rgb *= mix(vec3(1.0), gr.rgb * 1.18, grainAmt);
           vec4 inkS = texture2D(inkMap, vec2(vInkUv.x, vInkUv.y + inkShift));
           float inkA = inkS.a * mix(1.0, smoothstep(0.15, 0.75, gr.a) * 0.35 + 0.65, grainAmt);
-          diffuseColor.rgb = mix(diffuseColor.rgb, inkS.rgb, inkA * 0.95);`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, inkS.rgb, inkA * 0.95);
+          // hiệu ứng ánh vàng sau khi viết xong: chữ chuyển sang vàng kim, có vệt sáng quét trái -> phải rồi tắt dần
+          if (glowT >= 0.0) {
+            vec2 iuv = vec2(vInkUv.x, vInkUv.y + inkShift);
+            vec2 m2 = smoothstep(glowRect.xy - 0.004, glowRect.xy, iuv) * (1.0 - smoothstep(glowRect.zw, glowRect.zw + 0.004, iuv));
+            float inR = m2.x * m2.y;
+            float env = sin(3.14159 * clamp(glowT, 0.0, 1.0));
+            float bx = mix(glowRect.x - 0.06, glowRect.z + 0.06, clamp(glowT * 1.25 - 0.1, 0.0, 1.0));
+            float band = exp(-pow((vInkUv.x - bx) / 0.035, 2.0));
+            float gk = inR * inkA * glowAmt;
+            diffuseColor.rgb = mix(diffuseColor.rgb, glowCol * vec3(0.62, 0.48, 0.22), min(1.0, gk * env * 1.2));
+            vGlowE = glowCol * gk * env * (0.18 + band * 1.3);
+          }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          totalEmissiveRadiance += vGlowE;`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor * (0.9 + 0.2 * gr.a), 0.42, inkA * 0.8);`);
     };
@@ -62,6 +78,8 @@ export class Paper {
     c.strokeStyle = style || this.ink;
     c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
     c.globalAlpha = 1;
+    const b = this.bb; if (b) { const r = c.lineWidth / 2 + 1;
+      b.x0 = Math.min(b.x0, ax - r, bx - r); b.x1 = Math.max(b.x1, ax + r, bx + r); b.y0 = Math.min(b.y0, ay - r, by - r); b.y1 = Math.max(b.y1, ay + r, by + r); }
     this.dirty = true;
   }
 
@@ -86,6 +104,7 @@ export class Paper {
       c.restore();
       c.clearRect(0, 0, this.W, px);
       this.shiftRem -= px / this.ppm;
+      for (const b of [this.bb, this.glowBox]) if (b) { b.y0 += px; b.y1 += px; }
       this.dirty = true;
     }
     this.syncUniforms();
@@ -95,7 +114,27 @@ export class Paper {
     const off = this.s / this.tile;
     if (this.mat) for (const t of [this.mat.map, this.mat.normalMap]) if (t) t.offset.y = off;
   }
-  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; }
+  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; this.glowBox = null; if (this.uniforms) this.uniforms.glowT.value = -1; }
+
+  // ghi lại vùng mực của một lượt viết (để làm hiệu ứng ánh vàng)
+  trackStart() { this.bb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; }
+  trackStop() { const b = this.bb; this.bb = null; return b && b.x1 > b.x0 ? b : null; }
+  glow(box, { sec = 1.8, color = '#ffc94a', strength = 1 } = {}) {
+    if (!box || !this.uniforms) return;
+    this.glowBox = { ...box }; this.glowAge = 0; this.glowSec = Math.max(0.3, sec);
+    this.uniforms.glowCol.value.set(color); this.uniforms.glowAmt.value = strength;
+  }
+  updateGlow(dt) {
+    const U = this.uniforms; if (!U) return;
+    this.glowAge = (this.glowAge || 0) + dt;
+    const g = this.glowBox; if (!g) { U.glowT.value = -1; return; }
+    const t = this.glowAge / this.glowSec;
+    if (t >= 1) { this.glowBox = null; U.glowT.value = -1; return; }
+    U.glowT.value = t;
+    // canvas px -> toạ độ texture (CanvasTexture lật trục dọc)
+    const fy = (y) => this.tex.flipY ? 1 - y / this.H : y / this.H;
+    U.glowRect.value.set(g.x0 / this.W, Math.min(fy(g.y0), fy(g.y1)), g.x1 / this.W, Math.max(fy(g.y0), fy(g.y1)));
+  }
 
   upload(now, minInterval = 33) {
     if (this.dirty && now - this.lastUpload >= minInterval) { this.tex.needsUpdate = true; this.dirty = false; this.lastUpload = now; }

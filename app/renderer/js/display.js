@@ -78,7 +78,7 @@ function tweenCam(c, sec = 1.6) {
   tween = { t: 0, T: sec, p0: camera.position.clone(), t0: controls.target.clone(), f0: camera.fov,
     p1: new THREE.Vector3().fromArray(c.pos), t1: new THREE.Vector3().fromArray(c.target), f1: c.fov || camera.fov };
 }
-function goCam(mode, sec) { camMode = mode; followOff = 0; tweenCam(camOf(mode), sec); }
+function goCam(mode, sec) { camMode = mode; followOff = 0; followVel = 0; tweenCam(camOf(mode), sec); }
 applyCam(camOf('main'));
 
 // nền gradient tối kiểu sân khấu (vẽ bằng canvas)
@@ -204,13 +204,17 @@ api.on('display:cmd', (m) => {
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
 // camera bám theo ngòi bút theo chiều ngang (khung dọc 9:16 hẹp hơn khổ giấy)
-let followOff = 0;
+let followOff = 0, followVel = 0;
 function followPen(dt) {
   const f = (cfg.display.followPen ?? 60) / 100;
-  if (tween || donorActive || camMode !== 'main') return;
-  const want = f * (writer.pen.x - (G.SHEET_X0 + G.SHEET_X1) / 2) * (writer.busy ? 1 : 0.6);
-  const nxt = followOff + (want - followOff) * (1 - Math.exp(-dt * 1.2));
-  const d = nxt - followOff; followOff = nxt;
+  if (tween || donorActive || camMode !== 'main') { followVel = 0; return; }
+  // rảnh: camera đứng yên tại chỗ (không chạy theo bút ra chỗ đỗ) để người xem đọc chữ vừa viết
+  const want = writer.busy ? f * (writer.pen.x - (G.SHEET_X0 + G.SHEET_X1) / 2) : followOff;
+  // lò xo tắt dần tới hạn: bám sát ngòi bút (trễ ~2/ω giây) mà không giật, không vọt quá
+  const w = writer.busy ? Math.max(2, cfg.display.followSpeed ?? 14) : 4;
+  let x = followOff; const n = Math.max(1, Math.ceil(dt / (1 / 240))); const h = dt / n;
+  for (let i = 0; i < n; i++) { followVel += (w * w * (want - x) - 2 * w * followVel) * h; x += followVel * h; }
+  const d = x - followOff; followOff = x;
   camera.position.x += d; controls.target.x += d;
 }
 function render() { if (bloom.strength > 0.001) composer.render(); else renderer.render(scene, camera); }

@@ -145,6 +145,15 @@ function renderNames() {
   const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.names.fontId)}` }, 'Nguyễn Thị Hồng Nhung');
   binds.push(() => { prev.style.fontFamily = ff(cfg.writer.names.fontId); });
   $('#tab-names').replaceChildren(h('div', { class: 'grid' },
+    card('Hiệu ứng ánh vàng khi viết xong',
+      field('writer.glow.enabled', 'Bật', 'bool'),
+      field('writer.glow.types.name', 'Tên người vào', 'bool'),
+      field('writer.glow.types.comment', 'Bình luận / quà + bình luận', 'bool'),
+      field('writer.glow.types.donor', 'Tên donate + khung', 'bool'),
+      field('writer.glow.types.quote', 'Quote', 'bool'),
+      field('writer.glow.sec', 'Thời gian', 'range', { min: 0.6, max: 4, step: 0.1, unit: ' giây' }),
+      field('writer.glow.strength', 'Độ sáng', 'range', { min: 0.3, max: 2, step: 0.1, unit: '×' }),
+      field('writer.glow.color', 'Màu ánh', 'color')),
     card('Nguồn tên',
       field('writer.names.enabled', 'Bật viết tên người tham gia', 'bool'),
       field('writer.names.sources.join', 'Người vào phòng', 'bool'),
@@ -189,6 +198,7 @@ function renderQueue(q) {
   const row = (j) => h('div', { class: 'item' }, h('span', { class: 'tag' }, j.type === 'donor' ? `${j.gift} x${j.count}` : (j.source || 'join')),
     h('span', { class: 'grow' }, j.name), h('button', { class: 'b sm red', onclick: () => api.invoke('queue:remove', j.id) }, '×'));
   if (live.qNames) live.qNames.replaceChildren(...(q.names.length ? q.names.map(row) : [h('div', { class: 'hint' }, 'Trống')]));
+  if (live.qWait) live.qWait.replaceChildren(...((q.waiting || []).length ? q.waiting.map(w => h('div', { class: 'item' }, h('span', { class: 'tag' }, `còn ${w.left}s`), h('span', { class: 'grow' }, w.name))) : [h('div', { class: 'hint' }, 'Không có ai')]));
   if (live.qDonors) live.qDonors.replaceChildren(...(q.donors.length ? q.donors.map(row) : [h('div', { class: 'hint' }, 'Trống')]));
 }
 
@@ -231,7 +241,17 @@ function renderDonors() {
   const prev = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.donors.fontId)};font-size:44px;text-align:center` }, 'Hoàng Thuỳ Linh');
   const prev2 = h('div', { class: 'preview', style: `font-family:${ff(cfg.writer.donors.decoFontId)};font-size:20px;text-align:center;letter-spacing:.12em;margin-top:6px` }, 'THANK YOU · ROSE X5');
   binds.push(() => { prev.style.fontFamily = ff(cfg.writer.donors.fontId); prev2.style.fontFamily = ff(cfg.writer.donors.decoFontId); });
+  live.qWait = h('div', { class: 'list' });
   $('#tab-donors').replaceChildren(h('div', { class: 'grid' },
+    card('Tặng quà nhỏ + bình luận',
+      note('Ai tặng quà trong khoảng xu dưới đây rồi bình luận ngay sau đó sẽ được viết tên kèm nội dung bình luận. Hết thời gian chờ mà người đó không bình luận thì viết tên + khung như donate thường.'),
+      field('writer.giftComment.enabled', 'Bật', 'bool'),
+      field('writer.giftComment.minDiamonds', 'Từ', 'number', { unit: 'xu', min: 1 }),
+      field('writer.giftComment.maxDiamonds', 'Đến', 'number', { unit: 'xu', min: 1, tip: 'Tặng nhiều hơn mức này là donate thường (viết khung ngay)' }),
+      field('writer.giftComment.waitSec', 'Chờ bình luận tối đa', 'number', { unit: 'giây', min: 3 }),
+      field('writer.giftComment.format', 'Mẫu viết', 'text', { tip: 'Mã: {name} tên, {comment} nội dung, {gift} tên quà' }),
+      field('writer.giftComment.maxChars', 'Nội dung tối đa', 'number', { unit: 'ký tự', min: 10 }),
+      h('div', { class: 'hint' }, 'Đang chờ bình luận:'), live.qWait),
     card('Điều kiện & hàng chờ',
       field('writer.donors.enabled', 'Bật viết tên người donate', 'bool'),
       field('writer.donors.minDiamonds', 'Tổng xu tối thiểu', 'number', { unit: 'xu', min: 0 }),
@@ -530,6 +550,7 @@ function renderDisplay() {
       field('display.quoteCam', 'Chuyển góc chờ khi viết quote', 'bool', { tip: 'Lúc vắng người, camera lùi ra để người xem đọc được trọn câu quote' }),
       field('display.mouseCamera', 'Cho phép xoay bằng chuột', 'bool'),
       field('display.followPen', 'Camera bám theo ngòi bút', 'range', { min: 0, max: 100, step: 5, unit: '%' }),
+      field('display.followSpeed', 'Độ nhanh bám bút', 'range', { min: 3, max: 25, step: 1, tip: 'Cao = bám sát hơn (trễ ít). 14 ≈ trễ 0,14 giây' }),
       field('display.donorZoom', 'Tự zoom khi viết donate', 'bool'),
       field('display.donorHoldSec', 'Giữ cận cảnh sau khi xong', 'number', { unit: 'giây' })),
     card('Ánh sáng',

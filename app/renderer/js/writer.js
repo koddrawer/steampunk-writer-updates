@@ -132,9 +132,19 @@ export class Writer {
   }
 
   // Dừng câu quote đang viết dở: nhấc bút, cuộn giấy cho chữ dở chạy khuất qua trục trước, rồi mới viết tên
+  // viết xong: chữ ánh vàng lên rồi về lại màu mực
+  afterJob(job) {
+    const box = this.p.trackStop ? this.p.trackStop() : null;
+    const g = this.cfg().writer.glow || {};
+    if (!job || job.__aborted || !box || !g.enabled) return;
+    const kind = job.type === 'donor' ? 'donor' : job.type === 'quote' ? 'quote' : job.source === 'comment' || job.source === 'giftComment' ? 'comment' : 'name';
+    if ((g.types || {})[kind] === false) return;
+    this.p.glow(box, { sec: g.sec ?? 1.8, color: g.color || '#ffc94a', strength: g.strength ?? 1 });
+  }
   abort() {
     if (!this.busy || this.aborting) return;
     if (this.planning) { this.abortPending = true; return; }
+    if (this.job) this.job.__aborted = true;
     if (!this.inked) { this.step = null; this.steps = [{ k: 'done' }]; this.restoreLayout(); return; }   // chưa kịp viết chữ nào
     this.aborting = true;
     const q = this.cfg().writer.quotes || {};
@@ -275,6 +285,7 @@ export class Writer {
 
   async start(job) {
     this.saved = { contentHigh: this.contentHigh, rowOpen: this.rowOpen, xCur: this.xCur, rowH: this.rowH }; this.advanced = 0;
+    this.p.trackStart && this.p.trackStart();
     this.job = job; this.busy = true; this.steps = []; this.inked = false; this.planning = true; this.abortPending = false;
     let ok = false;
     try { ok = job.type === 'donor' ? await this.planDonor(job) : job.type === 'quote' ? await this.planQuote(job) : await this.planName(job); }
@@ -283,7 +294,7 @@ export class Writer {
     if (!ok) { this.busy = false; this.job = null; return false; }
     if (this.abortPending) { this.abortPending = false; this.steps = [{ k: 'done' }]; this.restoreLayout(); this.hooks.onJobStart && this.hooks.onJobStart(job); return true; }
     const W = this.cfg().writer;
-    const sec = job.type === 'donor' ? W.donors.maxSec : job.type === 'quote' ? W.quotes?.maxSec : job.source === 'comment' ? (W.names.comments?.maxSec ?? W.names.maxSec) : W.names.maxSec;
+    const sec = job.type === 'donor' ? W.donors.maxSec : job.type === 'quote' ? W.quotes?.maxSec : (job.source === 'comment' || job.source === 'giftComment') ? (W.names.comments?.maxSec ?? W.names.maxSec) : W.names.maxSec;
     this.fitTime(sec);
     this.steps.push({ k: 'done' });
     this.hooks.onJobStart && this.hooks.onJobStart(job);
@@ -332,6 +343,7 @@ export class Writer {
 
   // ---------------- chuyển động (gọi mỗi khung hình)
   tick(dt) {
+    this.p.updateGlow && this.p.updateGlow(dt);
     const feed = this.cfg().writer.paper?.feedSpeed || 0.12;
     let budget = dt;
     let guard = 0;
@@ -378,7 +390,7 @@ export class Writer {
         if (st.t >= st.T - 1e-9) this.step = null;
       } else if (st.k === 'call') { st.fn(); this.step = null; }
       else if (st.k === 'wait') { st.t = (st.t || 0) + budget; budget = 0; if (st.t >= st.T) this.step = null; }
-      else if (st.k === 'done') { this.step = null; this.busy = false; const j = this.job; this.job = null; this.planPen = null; this.hooks.onJobDone && this.hooks.onJobDone(j); break; }
+      else if (st.k === 'done') { this.afterJob(this.job); this.step = null; this.busy = false; const j = this.job; this.job = null; this.planPen = null; this.hooks.onJobDone && this.hooks.onJobDone(j); break; }
     }
     // khi rảnh: đưa bút về vị trí đỗ, lắc nhẹ cho tự nhiên
     if (!this.busy && !this.step && !this.steps.length) {

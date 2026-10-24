@@ -51,6 +51,11 @@ module.exports = async function start(ctx) {
     if (!saved.writer || !saved.writer.donors || !saved.writer.donors.bgMode || saved.writer.donors.bgMode === 'random') w.donors.bgMode = 'tiers';
     cfg.configVersion = 3;
   }
+  // v4 (bản 1.8.0): camera bám bút sát hơn
+  if ((saved.configVersion || 1) < 4) {
+    if ((cfg.display.followPen ?? 60) === 60) cfg.display.followPen = 100;
+    cfg.configVersion = 4;
+  }
   let saveT = null;
   const save = () => { clearTimeout(saveT); saveT = setTimeout(() => fs.writeFile(cfgFile, JSON.stringify(cfg, null, 1), () => { }), 300); };
   const getCfg = () => cfg;
@@ -191,6 +196,7 @@ module.exports = async function start(ctx) {
     join: (u) => { video.onJoin(u); queue.activity(); if (cfg.writer.names.sources.join) queue.addName(u, 'join'); },
     chat: (u, text) => {
       video.onActivity(); queue.activity();
+      if (queue.giftComment(u, text)) return;            // bình luận ngay sau khi tặng quà nhỏ -> viết tên + nội dung
       if (cfg.writer.names.comments && cfg.writer.names.comments.enabled) queue.addComment(u, text);
       else if (cfg.writer.names.sources.chat) queue.addName(u, 'chat', false, { comment: text });
     },

@@ -6,7 +6,7 @@ const builtinFont = (id, name, fam, w, subs = ['latin', 'latin-ext', 'vietnamese
 const NO_VN = ['latin', 'latin-ext'];
 
 module.exports = {
-  configVersion: 3,
+  configVersion: 4,
   tiktok: { username: '', signApiKey: '', autoConnect: false, autoReconnect: true },
   fonts: [
     builtinFont('great-vibes', 'Great Vibes (chữ ký)', 'great-vibes', 400),
@@ -95,6 +95,10 @@ module.exports = {
         'Thank you for stopping by. Have a wonderful day!',
       ],
     },
+    // tặng quà nhỏ (vd 1 xu) rồi bình luận ngay -> viết tên kèm nội dung bình luận; quá thời gian chờ thì viết tên + khung như thường
+    giftComment: { enabled: true, minDiamonds: 1, maxDiamonds: 1, waitSec: 30, format: '{name}: {comment}', maxChars: 80 },
+    // hiệu ứng ánh vàng khi viết xong
+    glow: { enabled: true, sec: 1.8, color: '#ffc94a', strength: 1, types: { name: true, comment: true, donor: true, quote: false } },
     donors: {
       enabled: true, minDiamonds: 1, mergeSec: 6, fontId: 'great-vibes', decoFontId: 'playfair',
       badgeHeightCm: 34, aspect: 1.7, nibMm: 3, decoNibMm: 1.4, speed: 0.5, decoSpeed: 0.7, revealSpeed: 1.4, revealNibMm: 7,
@@ -126,7 +130,7 @@ module.exports = {
   display: {
     width: 540, height: 960, frameless: false, alwaysOnTop: false, renderScale: 1, bgColor: '#2a2018', bgImage: '',
     lighting: 'cinematic', keyLight: 1, bloom: 0.25, vignette: 0.6, table: true,
-    exposure: 1.05, floorShadow: 0.28, mouseCamera: true, donorZoom: true, donorHoldSec: 4, followPen: 60, quoteCam: true, cameras: {}, dragWindow: false,
+    exposure: 1.05, floorShadow: 0.28, mouseCamera: true, donorZoom: true, donorHoldSec: 4, followPen: 100, followSpeed: 14, quoteCam: true, cameras: {}, dragWindow: false,
     videoBox: { x: 0.56, y: 0.04, w: 0.4, h: 0.3 },
   },
   music: { enabled: true, files: [], shuffle: true, volume: 0.35, crossfadeSec: 3, duck: true, duckPct: 25, duckCats: ['greet', 'thanks'] },
