@@ -1,7 +1,7 @@
 // Ảnh xem trước của khung logo: dựng đúng các nét máy sẽ vẽ rồi vẽ lên canvas nhỏ.
 import { buildBadge } from './badge.js';
 import { loadChain, layoutText, textToStrokes } from './text.js';
-import { processFrame } from './frameimg.js';
+import { processFrame, placeName } from './frameimg.js';
 
 const FALLBACK = ['playfair-display-vietnamese-700-normal.woff', 'dancing-script-vietnamese-700-normal.woff', 'playfair-display-latin-ext-700-normal.woff', 'playfair-display-latin-700-normal.woff'].map(f => '../assets/fonts/' + f);
 const chains = new Map();
@@ -46,7 +46,7 @@ export async function templateThumb(bg, cfg, api, sample = 'Phạm Bảo Ngọc'
 // Ảnh xem trước khung ảnh của người dùng: nét đã tách nền + tên mẫu viết vào vùng khung xanh lá
 export async function imageThumb(bg, cfg, api, sample = 'Phạm Bảo Ngọc', w = 320, showBox = false) {
   const d = cfg.writer.donors;
-  const key = ['img', bg.file, bg.sens, bg.clearBox, bg.namePad, d.fontId, sample, w, showBox].join('|');
+  const key = ['img', bg.file, bg.sens, bg.clearBox, bg.namePad, bg.nameMode, d.fontId, sample, w, showBox].join('|');
   if (cache.has(key)) return cache.get(key);
   const p = (async () => {
     const fr = await processFrame(api.mediaUrl(bg.file), { sens: (bg.sens ?? 50) / 100, clearBox: bg.clearBox !== false });
@@ -54,19 +54,19 @@ export async function imageThumb(bg, cfg, api, sample = 'Phạm Bảo Ngọc', w
     const x = cv.getContext('2d'); const k = w / fr.w;
     x.fillStyle = '#f1e6cf'; x.fillRect(0, 0, cv.width, cv.height);
     x.drawImage(fr.inkCanvas, 0, 0, cv.width, cv.height);
-    const box = fr.nameBox || { x: fr.w * (0.5 - (bg.nameWidth ?? 70) / 200), y: fr.h * (0.35 - (bg.nameYOffset ?? 0) / 100), w: fr.w * (bg.nameWidth ?? 70) / 100, h: fr.h * 0.3 };
-    if (showBox) { x.setLineDash([5, 4]); x.strokeStyle = fr.nameBox ? '#2fae4a' : '#d2702c'; x.lineWidth = 2; x.strokeRect(box.x * k, box.y * k, box.w * k, box.h * k); x.setLineDash([]); }
+    if (showBox && fr.region) {          // tô mờ vùng tên đã nhận + đường giữa
+      const rc = document.createElement('canvas'); rc.width = fr.w; rc.height = fr.h; const rx = rc.getContext('2d'); const id = rx.createImageData(fr.w, fr.h);
+      for (let i = 0; i < fr.w * fr.h; i++) if (fr.region.mask[i]) { id.data[i * 4] = 60; id.data[i * 4 + 1] = 200; id.data[i * 4 + 2] = 90; id.data[i * 4 + 3] = 70; }
+      rx.putImageData(id, 0, 0); x.drawImage(rc, 0, 0, cv.width, cv.height);
+      if (fr.region.line) { x.strokeStyle = 'rgba(40,150,70,.8)'; x.setLineDash([4, 4]); x.lineWidth = 1.5; x.beginPath();
+        fr.region.line.pts.forEach((p, i) => i ? x.lineTo(p.x * k, p.y * k) : x.moveTo(p.x * k, p.y * k)); x.stroke(); x.setLineDash([]); }
+    } else if (showBox && !fr.region) { x.setLineDash([5, 4]); x.strokeStyle = '#d2702c'; x.lineWidth = 2; x.strokeRect(fr.w * 0.15 * k, fr.h * 0.35 * k, fr.w * 0.7 * k, fr.h * 0.3 * k); x.setLineDash([]); }
     const ch = await chain(cfg, api, d.fontId);
-    const pad = (bg.namePad ?? 8) / 100;
-    const L1 = layoutText(ch, sample, 1); const bw1 = (L1.bbox.x1 - L1.bbox.x0) || 1, bh1 = (L1.bbox.y1 - L1.bbox.y0) || 1;
-    const em = Math.min(box.w * (1 - 2 * pad) / bw1, box.h * (1 - 2 * pad) / bh1);
-    const L = layoutText(ch, sample, em);
-    const ox = box.x + box.w / 2 - (L.bbox.x0 + L.bbox.x1) / 2, oy = -(box.y + box.h / 2) - (L.bbox.y0 + L.bbox.y1) / 2;
-    const nib = Math.max(1, em * 0.045);
-    const strokes = textToStrokes(L, { nib, fill: 'hatch', place: ([px, py]) => [(px + ox) * k, -(py + oy) * k] });
-    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#2b1b10'; x.lineWidth = Math.max(1, nib * k);
-    for (const s of strokes) { x.beginPath(); x.moveTo(s[0][0], s[0][1]); for (let i = 1; i < s.length; i++) x.lineTo(s[i][0], s[i][1]); x.stroke(); }
-    return { url: cv.toDataURL('image/png'), found: fr.found };
+    const pn = placeName(ch, sample, fr, { pad: (bg.namePad ?? 8) / 100, mode: bg.nameMode || 'auto' });
+    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#2b1b10'; x.lineWidth = Math.max(1, pn.nib * k);
+    for (const s of pn.strokes) { x.beginPath(); x.moveTo(s[0][0] * k, s[0][1] * k); for (let i = 1; i < s.length; i++) x.lineTo(s[i][0] * k, s[i][1] * k); x.stroke(); }
+    const ln = fr.region && fr.region.line;
+    return { url: cv.toDataURL('image/png'), found: fr.found, shape: !ln ? 'rect' : ln.curved && ln.varies ? 'curved+varies' : ln.curved ? 'curved' : ln.varies ? 'varies' : 'rect' };
   })();
   cache.set(key, p);
   return p;

@@ -2,7 +2,7 @@
 import { G } from './machine.js';
 import { layoutText, textToStrokes, strokesLength, sanitize, hasRenderable, wrapText, sortLTR } from './text.js';
 import { buildBadge, TEMPLATES } from './badge.js';
-import { processFrame } from './frameimg.js';
+import { processFrame, placeName } from './frameimg.js';
 
 const LIFT = 0.012;          // nhấc bút 12 mm
 const PARK = { x: G.SHEET_X1 - 0.06, y: -0.22 };
@@ -185,21 +185,24 @@ export class Writer {
         const steps = sortStrokes(fr.strokes).map(st => ({ pts: st.pts.map(toM), nib: (st.width + 2.5) * px2m }));
         const travelK = 2.2, sp = c.decoSpeed || 0.7;
         for (const st of steps) this.steps.push({ k: 'stroke', pts: clampPts(st.pts), nib: st.nib, speed: sp, travel: sp * travelK, zv: 0.22, mc: 0.04, style });
-        if (fr.nameBox) {
-          const b = fr.nameBox; const [x0, y0] = toM([b.x, b.y]), [x1, y1] = toM([b.x + b.w, b.y + b.h]);
-          box = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
-        }
+        // tên: tự dàn theo hình vùng xanh (chữ nhật / vòng cung / sóng / to nhỏ không đều)
+        const pn = placeName(nameChain, name, fr, { pad: (bg.namePad ?? 8) / 100, mode: bg.nameMode || 'auto' });
+        const nibM = Math.min(nibName, Math.max(0.0008, pn.nib * s));
+        box = { strokes: pn.strokes.map(st => st.map(toM)), nib: nibM };
       }
-      if (!box) box = { cx, cy: cy + ((bg.nameYOffset ?? 0) / 100) * H, w: W * (bg.nameWidth ?? 70) / 100, h: H * 0.3 };
-      // tự chọn cỡ chữ vừa khít vùng tên (theo cả chiều rộng và chiều cao)
-      const pad = (bg.namePad ?? 8) / 100;
-      const L1 = layoutText(nameChain, name, 1);
-      const bh1 = (L1.bbox.y1 - L1.bbox.y0) || 1, bw1 = (L1.bbox.x1 - L1.bbox.x0) || 1;
-      const em = Math.min(box.w * (1 - 2 * pad) / bw1, box.h * (1 - 2 * pad) / bh1);
-      const L = layoutText(nameChain, name, em);
-      const ox = box.cx - (L.bbox.x0 + L.bbox.x1) / 2, oy = box.cy - (L.bbox.y0 + L.bbox.y1) / 2;
-      const nib = Math.min(nibName, Math.max(0.0008, em * 0.045));
-      const strokes = textToStrokes(L, { nib, fill: 'hatch', place: ([x, y]) => [x + ox, y + oy] });
+      let strokes, nib;
+      if (box && box.strokes) { strokes = box.strokes; nib = box.nib; }
+      else {
+        const bx = { cx, cy: cy + ((bg.nameYOffset ?? 0) / 100) * H, w: W * (bg.nameWidth ?? 70) / 100, h: H * 0.3 };
+        const pad = (bg.namePad ?? 8) / 100;
+        const L1 = layoutText(nameChain, name, 1);
+        const bh1 = (L1.bbox.y1 - L1.bbox.y0) || 1, bw1 = (L1.bbox.x1 - L1.bbox.x0) || 1;
+        const em = Math.min(bx.w * (1 - 2 * pad) / bw1, bx.h * (1 - 2 * pad) / bh1);
+        const L = layoutText(nameChain, name, em);
+        const ox = bx.cx - (L.bbox.x0 + L.bbox.x1) / 2, oy = bx.cy - (L.bbox.y0 + L.bbox.y1) / 2;
+        nib = Math.min(nibName, Math.max(0.0008, em * 0.045));
+        strokes = textToStrokes(L, { nib, fill: 'hatch', place: ([x, y]) => [x + ox, y + oy] });
+      }
       this.queueStrokes(strokes, nib, c.speed || 0.45, 0, null, 'keep');
     }
     this.steps.push({ k: 'call', fn: () => this.hooks.onDonorEnd && this.hooks.onDonorEnd() });

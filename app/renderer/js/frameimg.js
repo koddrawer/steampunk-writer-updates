@@ -2,6 +2,7 @@
 //  1) tìm khung viền XANH LÁ đánh dấu vùng viết tên
 //  2) xoá nền + mảng màu, chỉ giữ nét hoa văn (ngưỡng thích nghi theo độ tối cục bộ)
 //  3) làm mảnh nét (skeleton) rồi dò thành các đường để ngòi bút vẽ thật, kèm độ dày từng nét
+import { layoutText, textToStrokes } from './text.js';
 const cache = new Map();
 
 export function processFrame(url, opts = {}) {
@@ -36,10 +37,20 @@ async function run(url, o) {
     const score = bw * bh * (fillRatio < 0.6 ? 1 : 0.4);          // ưu tiên dạng viền chữ nhật
     if (score > best) { best = score; box = { ...c, bw, bh, fillRatio }; }
   }
-  let nameBox = null;
+  let nameBox = null, region = null;
   if (box) {
-    const t = box.fillRatio < 0.6 ? Math.max(1, Math.round(box.n / (2 * (box.bw + box.bh)))) : 0;
-    nameBox = { x: box.x0 + t + 1, y: box.y0 + t + 1, w: Math.max(4, box.bw - 2 * t - 2), h: Math.max(4, box.bh - 2 * t - 2) };
+    // vùng tên có hình dạng bất kỳ: lấp kín phần bên trong đường viền xanh (loang từ mép ảnh, phần không tới được là bên trong)
+    const wall = new Uint8Array(N); for (const i of box.idx) wall[i] = 1;
+    const wallD = dilate(wall, w, h, 1);
+    const out = new Uint8Array(N); const st = [];
+    for (let x = 0; x < w; x++) { st.push(x, (h - 1) * w + x); } for (let y = 0; y < h; y++) { st.push(y * w, y * w + w - 1); }
+    while (st.length) { const i = st.pop(); if (out[i] || wallD[i]) continue; out[i] = 1; const x = i % w, y = (i / w) | 0;
+      if (x > 0) st.push(i - 1); if (x < w - 1) st.push(i + 1); if (y > 0) st.push(i - w); if (y < h - 1) st.push(i + w); }
+    let rm = new Uint8Array(N), area = 0;
+    for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) { const i = y * w + x; if (!out[i] && !wallD[i]) { rm[i] = 1; area++; } }
+    if (area < Math.max(60, box.n * 0.5)) { rm = new Uint8Array(N); area = 0; for (const i of box.idx) { rm[i] = 1; area++; } }   // khung tô đặc
+    region = buildRegion(rm, w, h, box);
+    nameBox = region.bbox;
   }
   // xoá toàn bộ điểm xanh (và viền 1px quanh) để không bị coi là nét
   const greenD = dilate(green, w, h, 2);
@@ -56,9 +67,7 @@ async function run(url, o) {
   const dark = 0.16 + 0.1 * o.sens;                                // đen đậm tuyệt đối luôn là nét
   let mask = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (!greenD[i] && (M[i] - L[i] > off || L[i] < dark)) mask[i] = 1;
-  if (nameBox && o.clearBox) {
-    for (let y = nameBox.y; y < nameBox.y + nameBox.h; y++) for (let x = nameBox.x; x < nameBox.x + nameBox.w; x++) mask[y * w + x] = 0;
-  }
+  if (region && o.clearBox) for (let i = 0; i < N; i++) if (region.mask[i]) mask[i] = 0;
   // bỏ đốm nhỏ
   for (const c of components(mask, w, h)) if (c.n < o.minSpeck) for (const i of c.idx) mask[i] = 0;
 
@@ -77,7 +86,7 @@ async function run(url, o) {
     const half = ds[Math.floor(ds.length / 2)] || 1;
     return { pts: rdp(pts.map(([x, y]) => [x + 0.5, y + 0.5]), 0.7), width: Math.max(1, half * 2 - 0.5) };
   }).filter(s => s.pts.length > 1);
-  return { w, h, nameBox, found: !!nameBox, strokes, inkCanvas: ink, maskCount: mask.reduce((a, b) => a + b, 0) };
+  return { w, h, nameBox, region, found: !!nameBox, strokes, inkCanvas: ink, maskCount: mask.reduce((a, b) => a + b, 0) };
 }
 
 // ---------------- tiện ích ảnh
@@ -188,4 +197,97 @@ function offsetLine(pts, d) {
     const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
     return [p[0] - dy / L * d, p[1] + dx / L * d];
   });
+}
+
+// ---------------- đường giữa của vùng tên (để chữ uốn theo vòng cung / sóng / vùng phình to nhỏ)
+function buildRegion(rm, w, h, box) {
+  const xs = [], top = [], bot = [];
+  let bx0 = w, bx1 = 0, by0 = h, by1 = 0;
+  for (let x = box.x0; x <= box.x1; x++) {
+    let best = null, cur = null;
+    for (let y = box.y0; y <= box.y1 + 1; y++) {
+      const on = y <= box.y1 && rm[y * w + x];
+      if (on && !cur) cur = [y, y]; else if (on) cur[1] = y;
+      if (!on && cur) { if (!best || cur[1] - cur[0] > best[1] - best[0]) best = cur; cur = null; }
+    }
+    if (best && best[1] - best[0] >= 1) { xs.push(x); top.push(best[0]); bot.push(best[1]);
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (best[0] < by0) by0 = best[0]; if (best[1] > by1) by1 = best[1]; }
+  }
+  const bbox = { x: bx0, y: by0, w: Math.max(4, bx1 - bx0), h: Math.max(4, by1 - by0) };
+  if (xs.length < 4) return { mask: rm, bbox, line: null };
+  // làm mượt
+  const win = Math.max(2, Math.round(xs.length / 30));
+  const sm = (a) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - win); j <= Math.min(a.length - 1, i + win); j++) { s += a[j]; n++; } return s / n; });
+  const T = sm(top), B = sm(bot);
+  const pts = xs.map((x, i) => ({ x: x + 0.5, y: (T[i] + B[i] + 1) / 2, tv: B[i] - T[i] + 1 }));
+  // độ dài cung + độ dày vuông góc với đường giữa
+  let S = 0; pts[0].s = 0;
+  for (let i = 1; i < pts.length; i++) { S += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); pts[i].s = S; }
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - win)], b = pts[Math.min(pts.length - 1, i + win)];
+    const ang = Math.atan2(b.y - a.y, b.x - a.x); pts[i].ang = ang; pts[i].t = pts[i].tv * Math.abs(Math.cos(ang));
+  }
+  const ts = pts.map(p => p.t).sort((a, b) => a - b);
+  const curved = Math.max(...pts.map(p => Math.abs(p.ang))) > 0.08;
+  const varies = ts[Math.floor(ts.length * 0.9)] > ts[Math.floor(ts.length * 0.1)] * 1.25;
+  return { mask: rm, bbox, line: { pts, S, curved, varies } };
+}
+function at(line, s) {
+  const p = line.pts; if (s <= 0) return p[0]; if (s >= line.S) return p[p.length - 1];
+  let lo = 0, hi = p.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p[m].s < s) lo = m; else hi = m; }
+  const u = (s - p[lo].s) / ((p[hi].s - p[lo].s) || 1);
+  return { x: p[lo].x + (p[hi].x - p[lo].x) * u, y: p[lo].y + (p[hi].y - p[lo].y) * u, ang: p[lo].ang + (p[hi].ang - p[lo].ang) * u, t: p[lo].t + (p[hi].t - p[lo].t) * u };
+}
+
+/**
+ * Dàn tên vào vùng xanh lá (toạ độ pixel ảnh, y hướng xuống):
+ *  - vùng thẳng: cỡ chữ vừa khít chiều rộng/chiều cao
+ *  - vùng cong (vòng cung, sóng): từng chữ đặt theo đường giữa, xoay theo độ cong
+ *  - vùng to nhỏ không đều: từng chữ co giãn theo bề dày vùng tại chỗ đó
+ * Trả về các nét (px) và cỡ ngòi gợi ý (px).
+ */
+export function placeName(chain, text, fr, { pad = 0.08, mode = 'auto' } = {}) {
+  const L1 = layoutText(chain, text, 1);
+  const bw1 = (L1.bbox.x1 - L1.bbox.x0) || 1, bh1 = (L1.bbox.y1 - L1.bbox.y0) || 1, ymid1 = (L1.bbox.y0 + L1.bbox.y1) / 2;
+  const reg = fr.region, line = reg && reg.line;
+  const box = fr.nameBox || { x: fr.w * 0.15, y: fr.h * 0.35, w: fr.w * 0.7, h: fr.h * 0.3 };
+  if (!line || (!line.curved && !line.varies) || mode === 'box') {
+    const em = Math.min(box.w * (1 - 2 * pad) / bw1, box.h * (1 - 2 * pad) / bh1);
+    const ox = box.x + box.w / 2 - (L1.bbox.x0 + L1.bbox.x1) / 2 * em, oy = box.y + box.h / 2 + ymid1 * em;
+    const nib = Math.max(1, em * 0.045);
+    return { strokes: textToStrokes(L1, { nib: nib / em, fill: 'hatch', place: ([x, y]) => [ox + x * em, oy - y * em] }), nib, em };
+  }
+  // ---- chữ theo đường cong
+  const S = line.S, avail = S * (1 - 2 * pad);
+  const glyphs = L1.glyphs.map(g => ({ g, x0: g.x0, x1: g.x1 }));
+  const gap = (i) => (i + 1 < glyphs.length ? glyphs[i + 1].x0 - glyphs[i].x1 : 0);
+  let tmax = 0; for (const p of line.pts) tmax = Math.max(tmax, p.t);
+  const scaleAt = (s, c) => { const p = at(line, s); const te = tmax * Math.pow(Math.max(0.05, p.t / tmax), 0.8); return c * te * (1 - 2 * pad) / bh1; };
+  const uniform = !(line.varies && mode !== 'uniform');
+  let tmin = Infinity; for (const p of line.pts) if (p.s > S * pad && p.s < S * (1 - pad)) tmin = Math.min(tmin, p.t);
+  let lay = null;
+  const layout = (c, start) => {           // đặt lần lượt từng chữ, trả về tổng chiều dài
+    let s = start; const out = [];
+    for (let i = 0; i < glyphs.length; i++) {
+      const adv = glyphs[i].x1 - glyphs[i].x0 + gap(i);
+      let k = uniform ? c : scaleAt(s + adv * c * 0.5, c);
+      if (!uniform) k = scaleAt(s + adv * k * 0.5, 1) * c;
+      out.push({ i, s: s + (glyphs[i].x1 - glyphs[i].x0) * k / 2, k }); s += adv * k;
+    }
+    return { out, len: s - start };
+  };
+  // tìm hệ số cỡ chữ lớn nhất vừa vùng
+  let c0 = uniform ? Math.min(avail / (L1.width || 1), tmin * (1 - 2 * pad) / bh1) : 1;
+  if (!uniform) { let lo = 0.02, hi = 1.0; for (let it = 0; it < 24; it++) { const m = (lo + hi) / 2; const r = layout(m, (S - layout(m, S * pad).len) / 2); if (r.len <= avail) lo = m; else hi = m; } c0 = lo; }
+  let start = S * pad; for (let it = 0; it < 6; it++) { const r = layout(c0, start); start = Math.max(0, (S - r.len) / 2); lay = layout(c0, start); }
+  const strokes = []; let kSum = 0;
+  for (const it of lay.out) {
+    const g = glyphs[it.i].g; const p = at(line, it.s); const k = it.k; kSum += k;
+    const cxg = (g.x0 + g.x1) / 2; const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
+    const place = ([x, y]) => { const lx = (x - cxg) * k, ly = -(y - ymid1) * k; return [p.x + lx * ca - ly * sa, p.y + lx * sa + ly * ca]; };
+    const nibk = Math.max(1, k * 0.045);
+    strokes.push(...textToStrokes({ glyphs: [g] }, { nib: nibk / k, fill: 'hatch', place }));
+  }
+  const kAvg = kSum / Math.max(1, lay.out.length);
+  return { strokes, nib: Math.max(1, kAvg * 0.045), em: kAvg };
 }

@@ -209,7 +209,7 @@ function renderDonors() {
       const proc = h('img', { style: 'width:100%;height:150px;object-fit:contain;background:#f1e6cf;border-radius:6px' });
       const st = h('div', { class: 'hint' }, 'Đang xử lý…');
       imageThumb(b, cfg, api, 'Phạm Bảo Ngọc', 520, true).then(r => { proc.src = r.url;
-        st.textContent = r.found ? '✓ Đã nhận vùng viết tên (khung xanh lá)' : '⚠ Không thấy khung xanh lá – tên sẽ viết ở giữa khung';
+        st.textContent = r.found ? '✓ Đã nhận vùng viết tên – ' + ({ rect: 'dạng thẳng', curved: 'dạng cong / vòng cung', varies: 'dạng to nhỏ không đều', 'curved+varies': 'cong và to nhỏ không đều' })[r.shape] : '⚠ Không thấy khung xanh lá – tên sẽ viết ở giữa khung';
         st.style.color = r.found ? 'var(--ok)' : 'var(--warn)'; }).catch(e => { st.textContent = 'Lỗi đọc ảnh: ' + e; st.style.color = 'var(--err)'; });
       const nm = h('input', { type: 'text', value: b.name, style: 'max-width:220px' }); nm.onchange = () => upd('name', nm.value);
       const rng = (k, def, min, max, unit) => { const r = h('input', { type: 'range', min, max, step: 1, value: b[k] ?? def }); const o = h('span', { class: 'unit' }, (b[k] ?? def) + unit);
@@ -222,6 +222,8 @@ function renderDonors() {
         st,
         h('div', { class: 'row' }, h('label', {}, 'Độ nhạy nét'), rng('sens', 50, 0, 100, '')),
         h('div', { class: 'row' }, h('label', {}, 'Lề chữ trong vùng tên'), rng('namePad', 8, 0, 30, '%')),
+        h('div', { class: 'row' }, h('label', {}, 'Cách dàn tên'), (() => { const sel = h('select', {}, ...[['auto', 'Tự động theo hình vùng xanh'], ['uniform', 'Uốn theo vùng, cỡ chữ đều'], ['box', 'Thẳng, vừa khung chữ nhật bao ngoài']].map(([v, t]) => h('option', { value: v }, t)));
+          sel.value = b.nameMode || 'auto'; sel.onchange = () => upd('nameMode', sel.value); return sel; })()),
         h('div', { class: 'row' }, h('label', {}, 'Xoá nét cũ trong vùng tên'), h('label', { class: 'switch' }, cb, h('span'))));
     }) : [h('div', { class: 'hint' }, 'Chưa có ảnh logo riêng')]));
   };
@@ -267,7 +269,7 @@ function renderDonors() {
       h('div', { class: 'btns' }, btn('Chọn khung cố định…', () => openGallery({ title: 'Chọn 1 khung cố định', multi: false, selected: [cfg.writer.donors.bgFixed],
         onDone: (ids) => ids[0] && setPath('writer.donors.bgFixed', ids[0]) }))),
       h('h4', { style: 'margin:14px 0 4px;color:var(--brass)' }, 'Khung ảnh của bạn'),
-      note('Vẽ (hoặc tô) một khung chữ nhật viền XANH LÁ (#00FF00) lên ảnh ở chỗ muốn viết tên. Phần mềm tự tìm khung đó, xoá nền + mảng màu, chỉ giữ nét hoa văn để ngòi bút vẽ lại, rồi tự chọn cỡ chữ cho tên vừa khít vùng xanh. Ảnh PNG/JPG, càng nét càng đẹp.'),
+      note('Vẽ (hoặc tô) một vùng viết tên bằng viền XANH LÁ (#00FF00) lên ảnh – chữ nhật, vòng cung, uốn sóng, phình to/thu nhỏ đều được (viền phải khép kín). Phần mềm tự tìm khung đó, xoá nền + mảng màu, chỉ giữ nét hoa văn để ngòi bút vẽ lại, rồi tự chọn cỡ chữ cho tên vừa khít vùng xanh. Ảnh PNG/JPG, càng nét càng đẹp.'),
       h('div', { class: 'btns' }, btn('+ Thêm khung ảnh', () => api.invoke('bg:addImage'), 'pri')),
       imgList,
       h('details', { style: 'margin-top:8px' }, h('summary', { class: 'hint', style: 'cursor:pointer' }, 'Chữ riêng cho từng khung mẫu'), tplTexts())),

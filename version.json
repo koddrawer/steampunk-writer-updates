@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
+  "version": "1.6.0",
   "minShell": "1.0.0",
-  "notes": "Làm lại khung logo donate: bạn đưa ảnh khung vào, đánh dấu chỗ viết tên bằng khung viền xanh lá; phần mềm tự tìm vùng đó, xoá nền + mảng màu chỉ giữ nét hoa văn để ngòi bút vẽ lại, và tự chỉnh cỡ chữ tên vừa khít vùng xanh. Xem trước ảnh gốc / ảnh máy sẽ vẽ, chỉnh độ nhạy nét.",
+  "notes": "Vùng tên đánh dấu xanh lá giờ có thể là hình bất kỳ (chữ nhật, vòng cung, uốn sóng, phình to/thu nhỏ): phần mềm tự dò đường giữa, uốn chữ theo vùng, xoay từng chữ theo độ cong và co giãn cỡ chữ theo bề dày vùng.",
   "date": "2026-10-24"
 }
