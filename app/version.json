@@ -1,6 +1,6 @@
 {
-  "version": "1.8.1",
+  "version": "1.8.2",
   "minShell": "1.0.0",
-  "notes": "Hiệu ứng ánh vàng rõ hơn: chữ chuyển vàng kim đậm, có quầng sáng và vệt sáng quét qua. Thêm nút Xem thử hiệu ứng (thẻ Viết tên, khung đầu tiên). Nút Gửi quà thử + Bình luận thử giờ chạy đúng chế độ quà nhỏ + bình luận.",
+  "notes": "Viết quote xong thì quote cũ được cuộn khuất hẳn rồi mới viết quote mới (bật/tắt ở thẻ Quote chờ).",
   "date": "2026-10-25"
 }

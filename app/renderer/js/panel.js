@@ -494,6 +494,7 @@ function renderQuotes() {
       field('writer.quotes.afterSec', 'Coi là vắng sau', 'number', { unit: 'giây', min: 3 }),
       field('writer.quotes.gapSec', 'Nghỉ giữa 2 câu', 'number', { unit: 'giây', min: 0 }),
       field('writer.quotes.interrupt', 'Có người mới thì dừng câu đang viết', 'bool'),
+      field('writer.quotes.clearPrev', 'Cuộn hết quote cũ rồi mới viết quote mới', 'bool', { tip: 'Mỗi lúc trên giấy chỉ có 1 câu quote, người xem dễ đọc' }),
       field('writer.quotes.random', 'Chọn câu ngẫu nhiên', 'bool', { tip: 'Tắt = lần lượt theo danh sách' }),
       field('writer.quotes.language', 'Ngôn ngữ quote', 'select', { options: [['both', 'Tiếng Việt + Tiếng Anh'], ['vi', 'Chỉ tiếng Việt'], ['en', 'Chỉ tiếng Anh']] }),
       h('div', { class: 'btns' }, btn('Viết 1 câu ngay', () => api.invoke('test:quote'), 'pri'))),

@@ -103,6 +103,12 @@ export class Writer {
       if (H <= avail) break; cap *= 0.88; acap *= 0.92;
     }
     this.rowOpen = false;
+    // quote trước vừa viết xong: cuộn cho khuất hẳn qua trục trước rồi mới viết quote mới
+    if (c.clearPrev !== false && this.lastType === 'quote' && this.contentHigh !== -Infinity) {
+      const d = (this.contentHigh - G.FR_Y) + G.FR_R * 2.7 + 0.03;
+      if (d > 0) this.steps.push({ k: 'advance', d, speed: c.clearFeedSpeed || 0.35, clear: true });
+      this.contentHigh = -Infinity;
+    }
     this.advanceFor(H, 0.045);
     this.contentHigh = YTOP;
     const cx = (G.SHEET_X0 + G.SHEET_X1) / 2;
@@ -135,6 +141,7 @@ export class Writer {
   // viết xong: chữ ánh vàng lên rồi về lại màu mực
   afterJob(job) {
     const box = this.p.trackStop ? this.p.trackStop() : null;
+    if (job) this.lastType = job.__aborted ? null : job.type;
     const g = this.cfg().writer.glow || {};
     if (!job || job.__aborted || !box || !g.enabled) return;
     const kind = job.type === 'donor' ? 'donor' : job.type === 'quote' ? 'quote' : job.source === 'comment' || job.source === 'giftComment' ? 'comment' : 'name';
@@ -321,7 +328,7 @@ export class Writer {
     // cuộn giấy trước khi viết cũng tính vào thời gian: tối đa 25% quỹ thời gian
     const feed = this.cfg().writer.paper?.feedSpeed || 0.12;
     let advT = 0;
-    for (const st of this.steps.filter(s => s.k === 'advance')) {
+    for (const st of this.steps.filter(s => s.k === 'advance' && !s.clear)) {
       const T0 = st.d / (st.speed || feed) + 0.3, cap = Math.max(0.8, limit * 0.25);
       if (T0 > cap) st.speed = st.d / (cap - 0.3);
       advT += Math.min(T0, cap);

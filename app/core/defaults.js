@@ -56,7 +56,7 @@ module.exports = {
       },
     },
     quotes: {
-      enabled: true, afterSec: 20, gapSec: 6, interrupt: true, random: true,
+      enabled: true, afterSec: 20, gapSec: 6, interrupt: true, clearPrev: true, random: true,
       fontId: 'dancing', sizeCm: 6, authorSizeCm: 3.2, nibMm: 1.8, fill: 'hatch', speed: 0.4, maxSec: 10, widthPct: 84, divider: true, clearFeedSpeed: 0.35,
       list: [
         'Có công mài sắt, có ngày nên kim — Tục ngữ',
