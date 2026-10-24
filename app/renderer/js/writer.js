@@ -2,6 +2,7 @@
 import { G } from './machine.js';
 import { layoutText, textToStrokes, strokesLength, sanitize, hasRenderable, wrapText, sortLTR } from './text.js';
 import { buildBadge, TEMPLATES } from './badge.js';
+import { processFrame } from './frameimg.js';
 
 const LIFT = 0.012;          // nhấc bút 12 mm
 const PARK = { x: G.SHEET_X1 - 0.06, y: -0.22 };
@@ -169,30 +170,37 @@ export class Writer {
       this.queueStrokes(b.deco.map(s => s.map(place)), nibDeco, c.decoSpeed || 0.6, 0, null, 'ltr');
       this.queueStrokes(b.names.map(s => s.map(place)), nibName, c.speed || 0.45, 0, null, 'keep');
     } else {
-      const img = await this.loadInkImage(bg.file, !!bg.keepColors);
-      if (img) {
-        const ar = img.width / img.height; let w = W, h = W / ar; if (h > H) { h = H; w = H * ar; }
-        const x0 = cx - w / 2, yT = cy + h / 2;
-        const nib = (c.revealNibMm || 7) / 1000, rows = [];
-        const pxH = img.height; const step = nib * 0.85;
-        let dir = 1;
-        for (let yy = yT - step / 2; yy > yT - h; yy -= step) {
-          const r = Math.min(pxH - 1, Math.floor((yT - yy) / h * pxH));
-          const spans = img.spans[r] || [];
-          const segs = spans.map(([a, b]) => [[x0 + a / img.width * w - nib * 0.3, yy], [x0 + b / img.width * w + nib * 0.3, yy]]);
-          if (dir < 0) segs.reverse().forEach(s => s.reverse());
-          rows.push(...segs); if (segs.length) dir = -dir;
-        }
+      // khung ảnh của người dùng: vẽ lại nét hoa văn bằng bút, viết tên vào vùng khung xanh lá
+      let fr = null;
+      try { fr = await processFrame(window.api && window.api.mediaUrl ? window.api.mediaUrl(bg.file) : bg.file, { sens: (bg.sens ?? 50) / 100, clearBox: bg.clearBox !== false, ink: this.p.ink }); } catch (e) { console.warn('khung ảnh lỗi', e); }
+      let box = null;
+      if (fr) {
+        const s = Math.min((G.SHEET_W - 0.06) / fr.w, H / fr.h);        // theo đúng tỉ lệ ảnh khung
+        const toM = ([x, y]) => [cx + (x - fr.w / 2) * s, cy + (fr.h / 2 - y) * s];
+        const px2m = s;
+        // ngòi bút đi theo đường giữa của từng nét hoa văn; mực đổ ra đúng hình nét trong ảnh (không lem ra ngoài)
+        const [ax, ay] = toM([0, 0]);
         let pat = null;
-        const style = () => { if (!pat) pat = this.p.makePattern(img.canvas, x0, yT, w, h); return pat.pat; };
-        this.queueStrokes(rows, nib, c.revealSpeed || 1.2, (c.maxSec || 30) * 0.5, style, 'keep');
+        const style = () => { if (!pat) pat = this.p.makePattern(fr.inkCanvas, ax, ay, fr.w * s, fr.h * s); return pat.pat; };
+        const steps = sortStrokes(fr.strokes).map(st => ({ pts: st.pts.map(toM), nib: (st.width + 2.5) * px2m }));
+        const travelK = 2.2, sp = c.decoSpeed || 0.7;
+        for (const st of steps) this.steps.push({ k: 'stroke', pts: clampPts(st.pts), nib: st.nib, speed: sp, travel: sp * travelK, zv: 0.22, mc: 0.04, style });
+        if (fr.nameBox) {
+          const b = fr.nameBox; const [x0, y0] = toM([b.x, b.y]), [x1, y1] = toM([b.x + b.w, b.y + b.h]);
+          box = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+        }
       }
-      const ny = cy + ((bg.nameYOffset ?? 0) / 100) * H;
-      const em0 = layoutText(nameChain, name, 1);
-      const em = Math.min((W * (bg.nameWidth ?? 70) / 100) / (em0.width || 1), (H * 0.28) / (em0.capHeight || 0.7));
-      const L = layoutText(nameChain, name, em); const ox = cx - (L.bbox.x0 + L.bbox.x1) / 2, oy = ny - L.capHeight / 2;
-      const strokes = textToStrokes(L, { nib: nibName, fill: 'hatch', place: ([x, y]) => [x + ox, y + oy] });
-      this.queueStrokes(strokes, nibName, c.speed || 0.45, (c.maxSec || 30) * 0.45, null, 'keep');
+      if (!box) box = { cx, cy: cy + ((bg.nameYOffset ?? 0) / 100) * H, w: W * (bg.nameWidth ?? 70) / 100, h: H * 0.3 };
+      // tự chọn cỡ chữ vừa khít vùng tên (theo cả chiều rộng và chiều cao)
+      const pad = (bg.namePad ?? 8) / 100;
+      const L1 = layoutText(nameChain, name, 1);
+      const bh1 = (L1.bbox.y1 - L1.bbox.y0) || 1, bw1 = (L1.bbox.x1 - L1.bbox.x0) || 1;
+      const em = Math.min(box.w * (1 - 2 * pad) / bw1, box.h * (1 - 2 * pad) / bh1);
+      const L = layoutText(nameChain, name, em);
+      const ox = box.cx - (L.bbox.x0 + L.bbox.x1) / 2, oy = box.cy - (L.bbox.y0 + L.bbox.y1) / 2;
+      const nib = Math.min(nibName, Math.max(0.0008, em * 0.045));
+      const strokes = textToStrokes(L, { nib, fill: 'hatch', place: ([x, y]) => [x + ox, y + oy] });
+      this.queueStrokes(strokes, nib, c.speed || 0.45, 0, null, 'keep');
     }
     this.steps.push({ k: 'call', fn: () => this.hooks.onDonorEnd && this.hooks.onDonorEnd() });
     return true;
@@ -395,4 +403,10 @@ export class Writer {
   }
 }
 
+// nét khung: trái -> phải theo mép trái, đảo chiều nét hở để bắt đầu từ đầu bên trái
+function sortStrokes(strokes) {
+  return strokes.map(s => (s.pts[0][0] <= s.pts[s.pts.length - 1][0] ? s : { ...s, pts: s.pts.slice().reverse() }))
+    .sort((a, b) => Math.min(...a.pts.map(p => p[0])) - Math.min(...b.pts.map(p => p[0])));
+}
+function clampPts(pts) { return pts.map(([x, y]) => [Math.min(G.SHEET_X1 - 0.004, Math.max(G.SHEET_X0 + 0.004, x)), Math.min(YTOP + 0.02, Math.max(Y_MIN, y))]); }
 function hexToRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x1d140c; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }

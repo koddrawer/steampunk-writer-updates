@@ -84,3 +84,9 @@ code { background: #120e0a; border: 1px solid var(--line); padding: 1px 5px; bor
 .gtick { position: absolute; top: 12px; right: 12px; width: 24px; height: 24px; border-radius: 50%; background: var(--brass2); color: #1a120a; font-weight: 800; display: none; place-items: center; }
 .gcard.on .gtick { display: grid; }
 .gtag { position: absolute; top: 12px; left: 12px; font-size: 11px; background: #2a2015; color: var(--brass2); border-radius: 99px; padding: 1px 7px; }
+
+.ggrid.in { padding: 0; overflow: visible; flex: none; }
+.gsec h4, .gsec summary { color: var(--brass); margin: 4px 0 10px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.gsec { margin-bottom: 14px; }
+.gadd { border-style: dashed; }
+.gwrap { flex: 1; overflow: auto; padding: 14px 16px; }

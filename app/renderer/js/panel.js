@@ -1,5 +1,5 @@
 // Bảng điều khiển
-import { templateThumb } from './thumbs.js';
+import { templateThumb, imageThumb } from './thumbs.js';
 const api = window.api;
 let cfg = await api.getConfig();
 const $ = (s, r = document) => r.querySelector(s);
@@ -205,14 +205,24 @@ function renderDonors() {
     const imgs = cfg.backgrounds.map((b, i) => [b, i]).filter(([b]) => b.type === 'image');
     imgList.replaceChildren(...(imgs.length ? imgs.map(([b, i]) => {
       const upd = (k, v) => { const arr = structuredClone(cfg.backgrounds); arr[i][k] = v; setPath('backgrounds', arr); };
-      const kc = h('input', { type: 'checkbox' }); kc.checked = !!b.keepColors; kc.onchange = () => upd('keepColors', kc.checked);
-      const yo = h('input', { type: 'number', value: b.nameYOffset ?? 0, step: 1, style: 'max-width:70px' }); yo.onchange = () => upd('nameYOffset', +yo.value);
-      const nw = h('input', { type: 'number', value: b.nameWidth ?? 70, step: 1, style: 'max-width:70px' }); nw.onchange = () => upd('nameWidth', +nw.value);
-      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch' },
-        h('div', { class: 'ctl' }, h('img', { class: 'thumb', src: api.mediaUrl(b.file) }), h('span', { class: 'grow' }, b.name), btn('Xoá', () => api.invoke('bg:remove', b.id), 'sm red')),
-        h('div', { class: 'ctl', style: 'gap:10px;margin-top:6px;flex-wrap:wrap' },
-          h('label', { class: 'hint' }, 'Giữ màu ảnh '), h('label', { class: 'switch' }, kc, h('span')),
-          h('label', { class: 'hint' }, 'Tên lệch dọc %'), yo, h('label', { class: 'hint' }, 'Bề rộng tên %'), nw));
+      const orig = h('img', { src: api.mediaUrl(b.file), style: 'width:100%;height:150px;object-fit:contain;background:#fff;border-radius:6px' });
+      const proc = h('img', { style: 'width:100%;height:150px;object-fit:contain;background:#f1e6cf;border-radius:6px' });
+      const st = h('div', { class: 'hint' }, 'Đang xử lý…');
+      imageThumb(b, cfg, api, 'Phạm Bảo Ngọc', 520, true).then(r => { proc.src = r.url;
+        st.textContent = r.found ? '✓ Đã nhận vùng viết tên (khung xanh lá)' : '⚠ Không thấy khung xanh lá – tên sẽ viết ở giữa khung';
+        st.style.color = r.found ? 'var(--ok)' : 'var(--warn)'; }).catch(e => { st.textContent = 'Lỗi đọc ảnh: ' + e; st.style.color = 'var(--err)'; });
+      const nm = h('input', { type: 'text', value: b.name, style: 'max-width:220px' }); nm.onchange = () => upd('name', nm.value);
+      const rng = (k, def, min, max, unit) => { const r = h('input', { type: 'range', min, max, step: 1, value: b[k] ?? def }); const o = h('span', { class: 'unit' }, (b[k] ?? def) + unit);
+        r.oninput = () => { o.textContent = r.value + unit; }; r.onchange = () => upd(k, +r.value); return h('div', { class: 'ctl' }, r, o); };
+      const cb = h('input', { type: 'checkbox' }); cb.checked = b.clearBox !== false; cb.onchange = () => upd('clearBox', cb.checked);
+      return h('div', { class: 'item', style: 'flex-direction:column;align-items:stretch;gap:6px' },
+        h('div', { class: 'ctl' }, nm, h('span', { class: 'grow' }), btn('Xoá', () => api.invoke('bg:remove', b.id), 'sm red')),
+        h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px' },
+          h('div', {}, h('div', { class: 'hint' }, 'Ảnh gốc'), orig), h('div', {}, h('div', { class: 'hint' }, 'Máy sẽ vẽ (đã xoá nền)'), proc)),
+        st,
+        h('div', { class: 'row' }, h('label', {}, 'Độ nhạy nét'), rng('sens', 50, 0, 100, '')),
+        h('div', { class: 'row' }, h('label', {}, 'Lề chữ trong vùng tên'), rng('namePad', 8, 0, 30, '%')),
+        h('div', { class: 'row' }, h('label', {}, 'Xoá nét cũ trong vùng tên'), h('label', { class: 'switch' }, cb, h('span'))));
     }) : [h('div', { class: 'hint' }, 'Chưa có ảnh logo riêng')]));
   };
   draw(); binds.push(draw);
@@ -243,10 +253,8 @@ function renderDonors() {
       field('writer.donors.offsetXcm', 'Lệch ngang', 'range', { min: -30, max: 30, step: 1, unit: ' cm' }),
       field('writer.donors.nibMm', 'Ngòi viết tên', 'range', { min: 1, max: 6, step: 0.1, unit: ' mm' }),
       field('writer.donors.decoNibMm', 'Ngòi nét trang trí', 'range', { min: 0.6, max: 3, step: 0.1, unit: ' mm' }),
-      field('writer.donors.revealNibMm', 'Ngòi in logo ảnh', 'range', { min: 3, max: 15, step: 0.5, unit: ' mm' }),
       field('writer.donors.speed', 'Tốc độ viết tên', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
-      field('writer.donors.decoSpeed', 'Tốc độ vẽ trang trí', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
-      field('writer.donors.revealSpeed', 'Tốc độ in logo ảnh', 'range', { min: 0.3, max: 4, step: 0.1, unit: ' m/s' }),
+      field('writer.donors.decoSpeed', 'Tốc độ vẽ khung', 'range', { min: 0.1, max: 2, step: 0.05, unit: ' m/s' }),
       field('writer.donors.maxSec', 'Thời gian vẽ logo + tên (tối đa)', 'range', { min: 1, max: 10, step: 0.5, unit: ' giây', tip: 'Chưa gồm vài giây cuộn giấy trước khi vẽ' })),
     tierCard(),
     card(['Nền logo', h('small', {}, 'bật/tắt để chọn mẫu dùng')],
@@ -258,15 +266,16 @@ function renderDonors() {
       h('div', { class: 'hint', style: 'margin-top:10px' }, 'Khung cho chế độ Cố định 1 mẫu:'), fixedStrip,
       h('div', { class: 'btns' }, btn('Chọn khung cố định…', () => openGallery({ title: 'Chọn 1 khung cố định', multi: false, selected: [cfg.writer.donors.bgFixed],
         onDone: (ids) => ids[0] && setPath('writer.donors.bgFixed', ids[0]) }))),
-      note('Ảnh logo của bạn (PNG nền trong suốt hoặc nền trắng) được máy "in" bằng mực theo từng đường quét; phần trắng tự thành trong suốt. Để chừa chỗ giữa logo cho tên.'),
+      h('h4', { style: 'margin:14px 0 4px;color:var(--brass)' }, 'Khung ảnh của bạn'),
+      note('Vẽ (hoặc tô) một khung chữ nhật viền XANH LÁ (#00FF00) lên ảnh ở chỗ muốn viết tên. Phần mềm tự tìm khung đó, xoá nền + mảng màu, chỉ giữ nét hoa văn để ngòi bút vẽ lại, rồi tự chọn cỡ chữ cho tên vừa khít vùng xanh. Ảnh PNG/JPG, càng nét càng đẹp.'),
+      h('div', { class: 'btns' }, btn('+ Thêm khung ảnh', () => api.invoke('bg:addImage'), 'pri')),
       imgList,
-      h('div', { class: 'btns' }, btn('+ Thêm ảnh logo', () => api.invoke('bg:addImage'))),
       h('details', { style: 'margin-top:8px' }, h('summary', { class: 'hint', style: 'cursor:pointer' }, 'Chữ riêng cho từng khung mẫu'), tplTexts())),
   ));
 }
 
 // ---------- kho khung (ảnh xem trước)
-const thumbOf = (b, sample) => b.type === 'image' ? Promise.resolve(api.mediaUrl(b.file)) : templateThumb(b, cfg, api, sample);
+const thumbOf = (b, sample) => b.type === 'image' ? imageThumb(b, cfg, api, sample).then(r => r.url).catch(() => api.mediaUrl(b.file)) : templateThumb(b, cfg, api, sample);
 function fillStrip(el, ids) {
   const list = ids.map(id => cfg.backgrounds.find(b => b.id === id)).filter(Boolean);
   el.replaceChildren(...(list.length ? list.map(b => {
@@ -277,24 +286,27 @@ function fillStrip(el, ids) {
 function openGallery({ title, multi, selected, onDone }) {
   const sel = new Set((selected || []).filter(Boolean));
   const sampleIn = h('input', { type: 'text', value: 'Phạm Bảo Ngọc', style: 'max-width:220px' });
-  const grid = h('div', { class: 'ggrid' });
+  const grid = h('div', { class: 'gwrap' });
   const count = h('span', { class: 'hint' });
+  const card1 = (b) => {
+    const im = h('img', { alt: b.name }); thumbOf(b, sampleIn.value || 'Phạm Bảo Ngọc').then(u => { im.src = u; });
+    const c = h('div', { class: 'gcard' + (sel.has(b.id) ? ' on' : ''), title: b.name, onclick: () => {
+      if (multi) { sel.has(b.id) ? sel.delete(b.id) : sel.add(b.id); c.classList.toggle('on'); count.textContent = `Đã chọn ${sel.size} khung`; }
+      else { sel.clear(); sel.add(b.id); grid.querySelectorAll('.gcard').forEach(x => x.classList.remove('on')); c.classList.add('on'); }
+    } }, h('div', { class: 'gimg' }, im), h('div', { class: 'gname' }, b.name), h('span', { class: 'gtick' }, '✓'));
+    return c;
+  };
   const draw = () => {
     count.textContent = multi ? `Đã chọn ${sel.size} khung` : '';
-    grid.replaceChildren(...cfg.backgrounds.map(b => {
-      const im = h('img', { alt: b.name }); thumbOf(b, sampleIn.value || 'Phạm Bảo Ngọc').then(u => { im.src = u; });
-      const c = h('div', { class: 'gcard' + (sel.has(b.id) ? ' on' : ''), title: b.name, onclick: () => {
-        if (multi) { sel.has(b.id) ? sel.delete(b.id) : sel.add(b.id); c.classList.toggle('on'); count.textContent = `Đã chọn ${sel.size} khung`; }
-        else { sel.clear(); sel.add(b.id); grid.querySelectorAll('.gcard').forEach(x => x.classList.remove('on')); c.classList.add('on'); }
-      } }, h('div', { class: 'gimg' }, im), h('div', { class: 'gname' }, b.name), h('span', { class: 'gtick' }, '✓'),
-        b.type === 'image' ? h('span', { class: 'gtag' }, 'ảnh') : null);
-      return c;
-    }));
+    const mine = cfg.backgrounds.filter(b => b.type === 'image'), tpls = cfg.backgrounds.filter(b => b.type !== 'image');
+    const add = h('div', { class: 'gcard gadd', onclick: () => api.invoke('bg:addImage') }, h('div', { class: 'gimg' }, h('span', { style: 'font-size:42px;color:var(--brass)' }, '+')), h('div', { class: 'gname' }, 'Thêm khung ảnh (có khung xanh lá)'));
+    const det = h('details', { class: 'gsec', open: !mine.length }, h('summary', {}, `Khung mẫu có sẵn (${tpls.length})`), h('div', { class: 'ggrid in' }, ...tpls.map(card1)));
+    grid.replaceChildren(h('div', { class: 'gsec' }, h('h4', {}, `Khung ảnh của bạn (${mine.length})`), h('div', { class: 'ggrid in' }, ...mine.map(card1), add)), det);
   };
   const close = () => { ov.remove(); off(); };
   const ov = h('div', { class: 'modal' }, h('div', { class: 'mbox' },
     h('div', { class: 'mhead' }, h('b', {}, title || 'Kho khung'), h('span', { class: 'grow' }),
-      h('label', { class: 'hint' }, 'Tên mẫu '), sampleIn, btn('Xem', draw, 'sm'), btn('+ Thêm ảnh logo', async () => { await api.invoke('bg:addImage'); }, 'sm')),
+      h('label', { class: 'hint' }, 'Tên mẫu '), sampleIn, btn('Xem', draw, 'sm'), btn('+ Thêm khung ảnh', async () => { await api.invoke('bg:addImage'); }, 'sm')),
     grid,
     h('div', { class: 'mfoot' }, count, h('span', { class: 'grow' }),
       multi ? btn('Bỏ chọn hết', () => { sel.clear(); draw(); }, 'sm') : null,

@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
+  "version": "1.5.0",
   "minShell": "1.0.0",
-  "notes": "Thêm 6 khung logo mới theo ảnh tham chiếu (dải lụa uốn sóng, cuộn giấy cổ, băng rôn viền hạt, khung hoa văn băng rôn vòm, bảng ngang huy chương, nhãn cổ điển vương miện); kho khung chọn bằng ảnh xem trước",
-  "date": "2026-10-23"
+  "notes": "Làm lại khung logo donate: bạn đưa ảnh khung vào, đánh dấu chỗ viết tên bằng khung viền xanh lá; phần mềm tự tìm vùng đó, xoá nền + mảng màu chỉ giữ nét hoa văn để ngòi bút vẽ lại, và tự chỉnh cỡ chữ tên vừa khít vùng xanh. Xem trước ảnh gốc / ảnh máy sẽ vẽ, chỉnh độ nhạy nét.",
+  "date": "2026-10-24"
 }
