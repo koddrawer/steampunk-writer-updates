@@ -118,6 +118,8 @@ module.exports = {
       thanks: { enabled: true, random: true, files: [] },
     },
     idle:   { afterSec: 15, gapSec: 0, loop: true },
+    // tự cân cỡ nhân vật giữa các video + chuyển cảnh không nháy
+    autoScale: true, charSize: 0, crossfadeMs: 220, fitData: {},
     greet:  { cooldownSec: 40, chance: 100, minJoins: 1, interruptIdle: true },
     thanks: { cooldownSec: 8, chance: 100, minDiamonds: 1, interrupt: true },
   },
@@ -127,6 +129,7 @@ module.exports = {
     exposure: 1.05, floorShadow: 0.28, mouseCamera: true, donorZoom: true, donorHoldSec: 4, followPen: 60, quoteCam: true, cameras: {}, dragWindow: false,
     videoBox: { x: 0.56, y: 0.04, w: 0.4, h: 0.3 },
   },
+  music: { enabled: true, files: [], shuffle: true, volume: 0.35, crossfadeSec: 3, duck: true, duckPct: 25, duckCats: ['greet', 'thanks'] },
   update: { owner: 'koddrawer', repo: 'steampunk-writer-updates', branch: 'main', autoCheck: true, intervalMin: 30 },
   windows: {},
 };

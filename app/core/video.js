@@ -79,13 +79,14 @@ class VideoScheduler {
   play(cat, file) {
     const v = this.cfg().video;
     this.cur = { cat, file, t: Date.now() }; this.lastPlay[cat] = Date.now(); this.lastFile[cat] = file; this.counts[cat]++;
-    this.popup.play(this.mediaUrl(file), { volume: v.volume ?? 1, fit: v.fit || 'contain', cat, loop: false });
+    this.popup.play(this.mediaUrl(file), { file, volume: v.volume ?? 1, fit: v.fit || 'contain', cat, loop: false });
     this.log('video', `▶ ${CAT_VI[cat]}: ${path.basename(file)}`);
     this.emit();
   }
   ended() {
     if (!this.cur) return;
     if (this.cur.cat === 'idle') this.lastIdleEnd = Date.now();
+    else this.resumeIdle = true;                  // vừa chào/cảm ơn xong -> nối idle ngay, không chờ
     this.cur = null; this.emit();
     this.tick();
     if (!this.cur) this.popup.idle();
@@ -106,8 +107,10 @@ class VideoScheduler {
     if (!this.displayOk || this.paused || this.cur) return this.emit(true);
     if (this.pending.thanks && this.ready('thanks')) { if (this.tryPlay('thanks')) return; }
     if (this.pending.greet >= (v.greet.minJoins || 1) && this.ready('greet')) { if (this.tryPlay('greet')) return; }
-    const quiet = now - this.lastActivity >= (v.idle.afterSec ?? 25) * 1000;
-    const gap = v.idle.loop ? 0 : (v.idle.gapSec ?? 45) * 1000;
+    // phát liên tục: hễ không có video chào/cảm ơn là quay lại idle ngay (không chờ)
+    const resume = this.resumeIdle; this.resumeIdle = false;
+    const quiet = v.idle.loop || resume ? true : now - this.lastActivity >= (v.idle.afterSec ?? 25) * 1000;
+    const gap = v.idle.loop || resume ? 0 : (v.idle.gapSec ?? 45) * 1000;
     if (quiet && now - this.lastIdleEnd >= gap && this.ready('idle')) this.tryPlay('idle');
     this.emit(true);
   }
@@ -116,7 +119,7 @@ class VideoScheduler {
     const left = (cat) => Math.max(0, Math.ceil(((v[cat]?.cooldownSec || 0) * 1000 - (now - this.lastPlay[cat])) / 1000));
     return { cur: this.cur && { cat: this.cur.cat, file: path.basename(this.cur.file) }, paused: this.paused, pending: this.pending,
       cooldown: { greet: left('greet'), thanks: left('thanks') }, quietSec: Math.floor((now - this.lastActivity) / 1000),
-      idleIn: Math.max(0, Math.ceil(Math.max((v.idle.afterSec ?? 25) * 1000 - (now - this.lastActivity), (v.idle.loop ? 0 : (v.idle.gapSec ?? 45) * 1000) - (now - this.lastIdleEnd)) / 1000)),
+      idleIn: v.idle.loop ? 0 : Math.max(0, Math.ceil(Math.max((v.idle.afterSec ?? 25) * 1000 - (now - this.lastActivity), (v.idle.loop ? 0 : (v.idle.gapSec ?? 45) * 1000) - (now - this.lastIdleEnd)) / 1000)),
       counts: this.counts };
   }
   emit(throttle) {

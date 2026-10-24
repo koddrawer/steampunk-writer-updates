@@ -395,6 +395,12 @@ function renderVideo() {
         field('video.volume', 'Âm lượng', 'range', { min: 0, max: 1, step: 0.05 }),
         note('Khung video nằm trong cửa sổ hiển thị máy (không ra ngoài được), nên LIVE Studio chỉ cần bắt 1 cửa sổ. Kéo giữa khung để di chuyển, kéo 4 góc để đổi cỡ; vị trí được nhớ.'),
         h('div', { class: 'btns' }, btn('Đặt lại vị trí khung', () => api.invoke('win:popupReset')), btn('Dừng video', () => api.invoke('video:stop'), 'red'))),
+      card('Chuyển cảnh & cỡ nhân vật',
+        field('video.crossfadeMs', 'Thời gian hoà cảnh giữa 2 video', 'range', { min: 0, max: 800, step: 20, unit: ' ms', tip: 'Video mới chỉ hiện khi đã có hình, nên không còn nháy đen; số này là độ mờ chuyển' }),
+        field('video.autoScale', 'Tự cân cỡ nhân vật giữa các video', 'bool', { tip: 'App tự đo nhân vật trong từng video rồi phóng/thu cho các video có nhân vật cùng cỡ, cùng chỗ đứng' }),
+        field('video.charSize', 'Chiều cao nhân vật', 'range', { min: 0, max: 100, step: 5, unit: '% khung', tip: '0 = tự động (lấy cỡ trung bình của các video)' }),
+        note('Nhận nhân vật tốt nhất khi video có nền trơn hoặc phông xanh. Video có nền quá rối sẽ giữ nguyên cỡ.'),
+        h('div', { class: 'btns' }, btn('Đo lại tất cả video', () => { api.invoke('video:refit'); toast('Đang đo lại cỡ nhân vật…'); }))),
       card('Ưu tiên', note('Cảm ơn > Chào > Idle. Video chào/cảm ơn có thời gian chờ giữa 2 lần phát; trong lúc chờ, các lượt vào/quà được gộp lại và phát 1 lần khi hết thời gian chờ.'),
         note('"Tỉ lệ phát" cho phép chỉ phát ngẫu nhiên một phần số lần (ví dụ 50% = khoảng một nửa số lần đủ điều kiện).'))),
     h('div', { class: 'cats' },
@@ -413,6 +419,45 @@ function renderVStat(s) {
   if (live.vstat) live.vstat.textContent = t + `  (đã phát: idle ${s.counts.idle}, chào ${s.counts.greet}, cảm ơn ${s.counts.thanks})`;
   const p = $('#pVid'); p.textContent = 'Video: ' + (s.paused ? 'tạm dừng' : s.cur ? CATV[s.cur.cat] : 'chờ'); p.className = 'pill ' + (s.cur ? 'ok' : '');
   if (live.vpausedCb) live.vpausedCb.checked = !!s.paused;
+}
+
+// ================= TAB: Nhạc nền
+function renderMusic() {
+  live.mstat = h('div', { class: 'hint' }, '—');
+  const list = h('div', { class: 'list' });
+  const draw = async () => {
+    const files = cfg.music.files || [];
+    const ex = files.length ? await api.invoke('video:exists', files) : [];
+    list.replaceChildren(...(files.length ? files.map((f, i) => h('div', { class: 'item' + (ex[i] ? '' : ' missing'), title: f },
+      h('span', { class: 'grow' }, fname(f)),
+      btn('▶', () => api.invoke('music:cmd', 'track', f), 'sm'), btn('×', () => api.invoke('music:remove', f), 'sm red'))) : [h('div', { class: 'hint' }, 'Chưa có bài nào')]));
+  };
+  $('#tab-music').replaceChildren(h('div', { class: 'grid' },
+    card('Đang phát', live.mstat,
+      h('div', { class: 'btns' }, btn('⏮ Bài trước', () => api.invoke('music:cmd', 'prev')), btn('▶ Phát', () => api.invoke('music:cmd', 'play'), 'pri'),
+        btn('⏸ Tạm dừng', () => api.invoke('music:cmd', 'pause')), btn('⏭ Bài sau', () => api.invoke('music:cmd', 'next'))),
+      field('music.enabled', 'Bật nhạc nền', 'bool'),
+      field('music.volume', 'Âm lượng nhạc', 'range', { min: 0, max: 1, step: 0.05 }),
+      field('music.shuffle', 'Trộn bài ngẫu nhiên', 'bool', { tip: 'Tắt = phát lần lượt theo danh sách' }),
+      field('music.crossfadeSec', 'Chuyển bài mượt trong', 'range', { min: 0, max: 10, step: 0.5, unit: ' giây' }),
+      note('Nhạc phát trong cửa sổ hiển thị máy nên LIVE Studio bắt được cùng lúc với hình (nhớ bật thu âm thanh ứng dụng/cửa sổ).')),
+    card('Giảm nhạc khi phát video',
+      field('music.duck', 'Tự giảm nhạc khi video chào/cảm ơn phát', 'bool', { tip: 'Để nghe rõ tiếng trong video; hết video nhạc tự to lại' }),
+      field('music.duckPct', 'Giảm còn', 'range', { min: 0, max: 100, step: 5, unit: '% âm lượng' }),
+      h('div', { class: 'row' }, h('label', {}, 'Áp dụng với'), h('div', { class: 'ctl', style: 'gap:12px' }, ...[['idle', 'Idle'], ['greet', 'Chào'], ['thanks', 'Cảm ơn']].map(([k, t]) => {
+        const cb = h('input', { type: 'checkbox' }); const sync = () => { cb.checked = (cfg.music.duckCats || []).includes(k); }; sync(); binds.push(sync);
+        cb.onchange = () => { const a = new Set(cfg.music.duckCats || []); cb.checked ? a.add(k) : a.delete(k); setPath('music.duckCats', [...a]); };
+        return h('label', { style: 'display:flex;gap:4px;align-items:center' }, cb, t);
+      })))),
+    card(['Danh sách nhạc', h('small', {}, 'mp3, wav, ogg, m4a, aac, flac')], list,
+      h('div', { class: 'btns' }, btn('+ Thêm nhạc', () => api.invoke('music:add'), 'pri')))));
+  draw(); binds.push(draw);
+}
+function renderMStat(s) {
+  if (!live.mstat || !s) return;
+  const mm = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  live.mstat.textContent = !cfg.music.enabled ? 'Nhạc nền đang tắt' : !s.file ? 'Chưa phát' :
+    `${s.playing ? '▶' : '⏸'} ${fname(s.file)}  ${mm(s.t)} / ${mm(s.dur)}${s.ducked ? '  · đang giảm âm' : ''}`;
 }
 
 // ================= TAB: Quote chờ
@@ -525,7 +570,7 @@ function renderUpd(s) { if (!live.upd || !s) return; live.upd.textContent = s.me
 
 // ---------------- khởi tạo
 refreshFontFaces();
-renderHome(); renderNames(); renderQuotes(); renderDonors(); renderVideo(); renderFonts(); renderDisplay(); renderUpdate();
+renderHome(); renderNames(); renderQuotes(); renderDonors(); renderVideo(); renderMusic(); renderFonts(); renderDisplay(); renderUpdate();
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
@@ -534,6 +579,7 @@ api.on('config', (c) => { const fontsChanged = JSON.stringify(c.fonts) !== JSON.
 api.on('log', addLog);
 api.on('queue', renderQueue);
 api.on('video:status', renderVStat);
+api.on('music:status', renderMStat);
 api.on('update:status', renderUpd);
 function renderTik(s) {
   const p = $('#pTik'); p.textContent = 'TikTok: ' + ({ connected: 'đã kết nối', connecting: 'đang kết nối', error: 'lỗi', disconnected: 'chưa kết nối' }[s.state] || s.state) + (s.viewers ? ` · ${s.viewers} người xem` : '');

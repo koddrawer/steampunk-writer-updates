@@ -12,7 +12,8 @@ const { TikTok } = require('./tiktok.js');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.glb': 'model/gltf-binary', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.m4v': 'video/mp4' };
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.m4v': 'video/mp4',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.opus': 'audio/ogg' };
 
 function deepMerge(a, b) {
   if (Array.isArray(b) || typeof b !== 'object' || b === null) return b;
@@ -80,9 +81,9 @@ module.exports = async function start(ctx) {
       const m = /bytes=(\d*)-(\d*)/.exec(range); let s = m[1] ? +m[1] : 0; let e = m[2] ? +m[2] : st.size - 1;
       e = Math.min(e, st.size - 1);
       return new Response(Readable.toWeb(fs.createReadStream(p, { start: s, end: e })), { status: 206,
-        headers: { 'content-type': type, 'accept-ranges': 'bytes', 'content-range': `bytes ${s}-${e}/${st.size}`, 'content-length': String(e - s + 1) } });
+        headers: { 'access-control-allow-origin': '*', 'content-type': type, 'accept-ranges': 'bytes', 'content-range': `bytes ${s}-${e}/${st.size}`, 'content-length': String(e - s + 1) } });
     }
-    return new Response(Readable.toWeb(fs.createReadStream(p)), { headers: { 'content-type': type, 'accept-ranges': 'bytes', 'content-length': String(st.size) } });
+    return new Response(Readable.toWeb(fs.createReadStream(p)), { headers: { 'access-control-allow-origin': '*', 'content-type': type, 'accept-ranges': 'bytes', 'content-length': String(st.size) } });
   });
   const mediaUrl = (p) => 'media://local/' + encodeURIComponent(p);
 
@@ -220,6 +221,8 @@ module.exports = async function start(ctx) {
     setCfg({ display: { cameras: cams } }); addLog('sys', cam ? `Đã lưu góc camera "${name}"` : `Đã đặt lại camera "${name}"`);
   });
   ipcMain.on('video:ended', (_e, info) => video.ended(info));
+  ipcMain.on('music:status', (_e, st) => toPanel('music:status', st));
+  ipcMain.on('video:fit', (_e, { file, data }) => { const fd = { ...(cfg.video.fitData || {}) }; fd[file] = data; setCfg({ video: { fitData: fd } }, { silent: true }); });
   ipcMain.on('video:error', (_e, info) => { addLog('err', 'Lỗi phát video: ' + (info && info.url ? decodeURIComponent(info.url.split('/').pop()) : '')); video.ended(info); });
 
   const copyInto = (src, dir) => {
@@ -259,7 +262,7 @@ module.exports = async function start(ctx) {
     'win:popupReset': () => setCfg({ display: { videoBox: { ...DEFAULTS.display.videoBox } } }),
     'display:cmd': (m) => W.display && W.display.webContents.send('display:cmd', m),
     'files:pick': async (kind, multi) => {
-      const filters = { video: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'm4v', 'mkv'] }], font: [{ name: 'Font', extensions: ['ttf', 'otf', 'woff'] }],
+      const filters = { video: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'm4v', 'mkv'] }], audio: [{ name: 'Nhạc', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'] }], font: [{ name: 'Font', extensions: ['ttf', 'otf', 'woff'] }],
         image: [{ name: 'Ảnh', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }] }[kind];
       const r = await dialog.showOpenDialog(W.panel, { properties: ['openFile', ...(multi ? ['multiSelections'] : [])], filters });
       return r.canceled ? [] : r.filePaths;
@@ -284,6 +287,15 @@ module.exports = async function start(ctx) {
       const c = cfg.video.categories[cat]; const list = [...c.files, ...files.filter(f => !c.files.includes(f))];
       setCfg({ video: { categories: { [cat]: { files: list } } } }); return files;
     },
+    // nhạc nền (phát trong màn hiển thị)
+    'music:add': async () => {
+      const files = await RPC['files:pick']('audio', true); if (!files.length) return [];
+      const list = [...(cfg.music.files || []), ...files.filter(f => !(cfg.music.files || []).includes(f))];
+      setCfg({ music: { files: list } }); return files;
+    },
+    'video:refit': () => toDisplay('video:refit', {}),
+    'music:remove': (file) => setCfg({ music: { files: (cfg.music.files || []).filter(f => f !== file) } }),
+    'music:cmd': (cmd, arg) => W.display && W.display.webContents.send('music:cmd', { cmd, arg }),
     'video:remove': (cat, file) => { const c = cfg.video.categories[cat]; setCfg({ video: { categories: { [cat]: { files: c.files.filter(f => f !== file) } } } }); },
     'video:exists': (files) => files.map(f => fs.existsSync(f)),
     'paper:clear': () => W.display && W.display.webContents.send('display:cmd', { cmd: 'clearPaper' }),

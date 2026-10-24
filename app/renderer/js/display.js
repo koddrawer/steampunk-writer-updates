@@ -11,6 +11,7 @@ import { Paper } from './paper.js';
 import { Writer } from './writer.js';
 import { loadChain } from './text.js';
 import { VideoBox } from './videobox.js';
+import { Music } from './music.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -167,6 +168,9 @@ api.send('display:ready', {});
 
 // ---------- khung video nổi (chỉ di chuyển trong cửa sổ này)
 const vbox = new VideoBox($('vbox'), $('vid'), api, getCfg);
+// ---------- nhạc nền (tự giảm âm khi đang phát video chào/cảm ơn)
+const music = new Music($('mus1'), $('mus2'), api, getCfg);
+vbox.onCat = (cat) => music.duck(cat);
 
 // ---------- hàng đợi việc (core giữ hàng đợi, màn hiển thị xin việc khi rảnh)
 let asking = false, lastAsk = 0;
@@ -183,7 +187,7 @@ function report() { api.send('display:status', { busy: writer.busy, job: writer.
 api.on('job:available', () => pull());
 
 api.on('config', (c) => {
-  const old = cfg; cfg = c; applyDisplayCfg(); vbox.layout();
+  const old = cfg; cfg = c; applyDisplayCfg(); vbox.layout(); music.sync();
   const op = old.writer.paper || {}, np = c.writer.paper || {};
   if (np.inkColor && np.inkColor !== op.inkColor) { paper.setInk(np.inkColor); writer.imageCache.clear(); }
   if (np.tint !== op.tint && paper.mat) { paper.mat.color.set(np.tint || '#f3e6cc'); machine.mats.PaperRoll.color.set(np.tint || '#f3e6cc'); }
@@ -235,7 +239,7 @@ function frame(dtIn) {
 if (!window.__manual) renderer.setAnimationLoop(() => frame());
 
 // tiện cho kiểm thử
-window.__sw = { machine, paper, writer, camera, controls, scene, renderer, G, b2t, applyCam, goCam, vbox,
+window.__sw = { machine, paper, writer, camera, controls, scene, renderer, G, b2t, applyCam, goCam, vbox, music,
   get camMode() { return camMode; },
   async sim(sec, dt = 1 / 30) { const n = Math.round(sec / dt); const sl = (ms) => new Promise(r => setTimeout(r, ms));
     for (let i = 0; i < n; i++) {

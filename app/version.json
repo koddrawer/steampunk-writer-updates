@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
+  "version": "1.7.0",
   "minShell": "1.0.0",
-  "notes": "Vùng tên đánh dấu xanh lá giờ có thể là hình bất kỳ (chữ nhật, vòng cung, uốn sóng, phình to/thu nhỏ): phần mềm tự dò đường giữa, uốn chữ theo vùng, xoay từng chữ theo độ cong và co giãn cỡ chữ theo bề dày vùng.",
+  "notes": "Sửa video: hết video chào/cảm ơn là nối ngay video idle, không còn khoảng dừng. Chuyển video không còn nháy đen (2 trình phát luân phiên, video mới có hình mới hiện, hoà cảnh mượt). Tự cân cỡ nhân vật giữa các video cho cùng cỡ, cùng chỗ đứng (chỉnh ở thẻ Video popup). Thêm Nhạc nền: danh sách nhạc, trộn bài, chuyển bài mượt, âm lượng, tự giảm nhạc khi phát video chào/cảm ơn.",
   "date": "2026-10-24"
 }
