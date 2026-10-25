@@ -207,8 +207,11 @@ export class Writer {
       try { fr = await processFrame(window.api && window.api.mediaUrl ? window.api.mediaUrl(bg.file) : bg.file, { sens: (bg.sens ?? 50) / 100, clearBox: bg.clearBox !== false, ink: this.p.ink }); } catch (e) { console.warn('khung ảnh lỗi', e); }
       let box = null;
       if (fr) {
-        const s = Math.min((G.SHEET_W - 0.06) / fr.w, H / fr.h);        // theo đúng tỉ lệ ảnh khung
-        const toM = ([x, y]) => [cx + (x - fr.w / 2) * s, cy + (fr.h / 2 - y) * s];
+        // đo phần hoa văn thật (bỏ lề trống của ảnh) rồi co giãn cho mọi khung cùng nằm vừa một ô W×H như nhau
+        const cb = contentBox(fr);
+        const s = Math.min(W / cb.w, H / cb.h) * Math.max(0.3, Math.min(2, (bg.scale ?? 100) / 100));
+        const ccx = (cb.x0 + cb.x1) / 2, ccy = (cb.y0 + cb.y1) / 2;
+        const toM = ([x, y]) => [cx + (x - ccx) * s, cy + (ccy - y) * s];
         const px2m = s;
         // ngòi bút đi theo đường giữa của từng nét hoa văn; mực đổ ra đúng hình nét trong ảnh (không lem ra ngoài)
         const [ax, ay] = toM([0, 0]);
@@ -447,3 +450,14 @@ function sortStrokes(strokes) {
 }
 function clampPts(pts) { return pts.map(([x, y]) => [Math.min(G.SHEET_X1 - 0.004, Math.max(G.SHEET_X0 + 0.004, x)), Math.min(YTOP + 0.02, Math.max(Y_MIN, y))]); }
 function hexToRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x1d140c; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+
+// khung bao phần hoa văn + vùng tên của ảnh khung (đơn vị pixel ảnh)
+function contentBox(fr) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const st of fr.strokes || []) { const r = (st.width || 1) / 2 + 1; for (const [x, y] of st.pts) { if (x - r < x0) x0 = x - r; if (x + r > x1) x1 = x + r; if (y - r < y0) y0 = y - r; if (y + r > y1) y1 = y + r; } }
+  const nb = fr.nameBox; if (nb) { const bx0 = nb.x ?? nb.x0, by0 = nb.y ?? nb.y0, bx1 = nb.x1 ?? (nb.x + nb.w), by1 = nb.y1 ?? (nb.y + nb.h);
+    if (isFinite(bx0) && isFinite(bx1)) { x0 = Math.min(x0, bx0); x1 = Math.max(x1, bx1); y0 = Math.min(y0, by0); y1 = Math.max(y1, by1); } }
+  if (!(x1 > x0 && y1 > y0)) return { x0: 0, y0: 0, x1: fr.w, y1: fr.h, w: fr.w, h: fr.h };
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(fr.w, x1); y1 = Math.min(fr.h, y1);
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+}

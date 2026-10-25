@@ -235,6 +235,7 @@ function renderDonors() {
         st,
         h('div', { class: 'row' }, h('label', {}, 'Độ nhạy nét'), rng('sens', 50, 0, 100, '')),
         h('div', { class: 'row' }, h('label', {}, 'Lề chữ trong vùng tên'), rng('namePad', 8, 0, 30, '%')),
+        h('div', { class: 'row' }, h('label', {}, 'Cỡ khung (so với chuẩn)'), rng('scale', 100, 50, 150, '%')),
         h('div', { class: 'row' }, h('label', {}, 'Cách dàn tên'), (() => { const sel = h('select', {}, ...[['auto', 'Tự động theo hình vùng xanh'], ['uniform', 'Uốn theo vùng, cỡ chữ đều'], ['box', 'Thẳng, vừa khung chữ nhật bao ngoài']].map(([v, t]) => h('option', { value: v }, t)));
           sel.value = b.nameMode || 'auto'; sel.onchange = () => upd('nameMode', sel.value); return sel; })()),
         h('div', { class: 'row' }, h('label', {}, 'Xoá nét cũ trong vùng tên'), h('label', { class: 'switch' }, cb, h('span'))));
