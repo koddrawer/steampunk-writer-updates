@@ -39,7 +39,7 @@ module.exports = {
     names: {
       enabled: true, sources: { join: true, chat: false, follow: false, share: false, like: false },
       fontId: 'great-vibes', sizeCm: 4.2, nibMm: 1.6, fill: 'hatch', speed: 0.35, maxSec: 6,
-      maxChars: 18, display: 'nickname', dedupeMin: 30, maxQueue: 40, skipWhenDonors: false,
+      maxChars: 18, display: 'nickname', layout: 'center', dedupeMin: 30, maxQueue: 40, skipWhenDonors: false,
       likeThreshold: 10,
       // nội dung viết kèm tên – mỗi dòng là một mẫu, chọn ngẫu nhiên. Mã: {name} {comment} {likes}
       templates: {
@@ -56,7 +56,7 @@ module.exports = {
       },
     },
     quotes: {
-      enabled: true, afterSec: 20, gapSec: 6, interrupt: true, clearPrev: true, random: true,
+      enabled: true, afterSec: 20, gapSec: 6, interrupt: true, clearPrev: true, afterNameSec: 5, afterDonorSec: 8, random: true,
       fontId: 'dancing', sizeCm: 6, authorSizeCm: 3.2, nibMm: 1.8, fill: 'hatch', speed: 0.4, maxSec: 10, widthPct: 84, divider: true, clearFeedSpeed: 0.35,
       list: [
         'Có công mài sắt, có ngày nên kim — Tục ngữ',

@@ -1,6 +1,6 @@
 {
-  "version": "1.8.2",
+  "version": "1.9.0",
   "minShell": "1.0.0",
-  "notes": "Viết quote xong thì quote cũ được cuộn khuất hẳn rồi mới viết quote mới (bật/tắt ở thẻ Quote chờ).",
+  "notes": "Quote viết xong được cuộn khuất hẳn rồi mới viết tên, donate hoặc quote mới. Thêm thời gian chờ sau khi viết tên / viết donate rồi mới chuyển sang quote (thẻ Quote chờ). Viết tên mỗi người một dòng, căn giữa khổ giấy (đổi lại được ở thẻ Viết tên → Cách xếp tên).",
   "date": "2026-10-25"
 }

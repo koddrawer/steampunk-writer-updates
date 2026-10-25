@@ -139,6 +139,8 @@ class JobQueue {
   makeQuote(force) {
     const q = this.cfg().writer.quotes || {}; const now = Date.now();
     if (!force && (!q.enabled || now - this.lastActivity < (q.afterSec ?? 20) * 1000 || now - this.lastQuoteEnd < (q.gapSec ?? 8) * 1000)) return null;
+    // chờ thêm sau khi viết tên / donate rồi mới chuyển sang quote
+    if (!force && (now - (this.lastNameEnd || 0) < (q.afterNameSec ?? 5) * 1000 || now - (this.lastDonorEnd || 0) < (q.afterDonorSec ?? 8) * 1000)) return null;
     const lang = q.language || 'both';
     const list = [...(lang !== 'en' ? q.list || [] : []), ...(lang !== 'vi' ? q.listEn || [] : [])].map(x => String(x).trim()).filter(Boolean);
     if (!list.length) return null;
@@ -151,9 +153,11 @@ class JobQueue {
     const [text, author] = list[i].split(/\s+[—–-]{1,2}\s+(?=[^—–-]*$)/);
     return { id: this.nextId++, type: 'quote', name: '“' + text.slice(0, 24) + '…”', text: text.trim(), author: (author || '').trim(), t: now };
   }
-  forceQuote() { if (this.current) return false; this.lastActivity = 0; this.lastQuoteEnd = 0; this.onChange(); return true; }
+  forceQuote() { if (this.current) return false; this.lastActivity = 0; this.lastQuoteEnd = 0; this.lastNameEnd = 0; this.lastDonorEnd = 0; this.onChange(); return true; }
   done(j) {
     if (this.current && this.current.type === 'quote') this.lastQuoteEnd = Date.now();
+    if (this.current && this.current.type === 'name') this.lastNameEnd = Date.now();
+    if (this.current && this.current.type === 'donor') this.lastDonorEnd = Date.now();
     if (this.current && j && this.current.id === j.id) {
       if (!j.skipped) { this.stats.written++; if (this.current.type === 'donor') this.stats.donors++; }
       this.current = null; this.onChange();

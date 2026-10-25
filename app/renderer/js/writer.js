@@ -42,6 +42,15 @@ export class Writer {
     if (d > 0) { this.steps.push({ k: 'advance', d }); this.contentHigh -= d; }
   }
 
+  // quote vừa viết xong còn trên giấy: cuộn cho khuất hẳn qua trục trước rồi mới viết việc tiếp theo
+  clearQuote() {
+    const q = this.cfg().writer.quotes || {};
+    if (q.clearPrev === false || this.lastType !== 'quote' || this.contentHigh === -Infinity) return;
+    const d = (this.contentHigh - G.FR_Y) + G.FR_R * 2.7 + 0.03;
+    if (d > 0) this.steps.push({ k: 'advance', d, speed: q.clearFeedSpeed || 0.35, clear: true });
+    this.contentHigh = -Infinity; this.rowOpen = false; this.lastType = null;
+  }
+
   // một dòng chữ trên một hàng mới (giấy cuộn lên 1 dòng)
   newRow(rowH, cap) {
     this.advanceFor(rowH, cap * 0.4);
@@ -61,11 +70,21 @@ export class Writer {
     let text = sanitize(chain, job.text || job.name, 160);
     if (!text || !hasRenderable(chain, text)) text = sanitize(chain, job.alt || '', c.maxChars || 20);
     if (!text) return false;
+    this.clearQuote();
+    const centered = c.layout !== 'inline';
+    const cx = (G.SHEET_X0 + G.SHEET_X1) / 2;
     const cap = (c.sizeCm || 3.5) / 100;
     const probe = layoutText(chain, 'H', 1); let em = cap / (probe.capHeight || 0.7);
     const margin = 0.03, maxW = G.SHEET_W - 2 * margin;
     const rowH = cap * 2.1;
     let L = layoutText(chain, text, em);
+    if (L.width <= maxW && centered) {
+      // mỗi người một dòng, căn giữa khổ giấy
+      this.newRow(rowH, cap);
+      this.writeInline(L, cap, c, cx - L.width / 2);
+      this.rowOpen = false;
+      return true;
+    }
     if (L.width <= maxW) {
       // ngắn: viết nối tiếp trên cùng hàng, hết chỗ thì sang hàng mới
       const gap = em * 0.55;
@@ -82,7 +101,7 @@ export class Writer {
       let LL = layoutText(chain, ln, em);
       if (LL.width > maxW) LL = layoutText(chain, ln, em * maxW / LL.width);
       this.newRow(capL * 2.1, capL);
-      this.writeInline(LL, capL, c, G.SHEET_X0 + margin);
+      this.writeInline(LL, capL, c, centered ? cx - LL.width / 2 : G.SHEET_X0 + margin);
     }
     this.rowOpen = false;
     return true;
@@ -103,12 +122,7 @@ export class Writer {
       if (H <= avail) break; cap *= 0.88; acap *= 0.92;
     }
     this.rowOpen = false;
-    // quote trước vừa viết xong: cuộn cho khuất hẳn qua trục trước rồi mới viết quote mới
-    if (c.clearPrev !== false && this.lastType === 'quote' && this.contentHigh !== -Infinity) {
-      const d = (this.contentHigh - G.FR_Y) + G.FR_R * 2.7 + 0.03;
-      if (d > 0) this.steps.push({ k: 'advance', d, speed: c.clearFeedSpeed || 0.35, clear: true });
-      this.contentHigh = -Infinity;
-    }
+    this.clearQuote();
     this.advanceFor(H, 0.045);
     this.contentHigh = YTOP;
     const cx = (G.SHEET_X0 + G.SHEET_X1) / 2;
@@ -163,6 +177,7 @@ export class Writer {
 
   async planDonor(job) {
     const c = this.cfg().writer.donors; const all = this.cfg();
+    this.clearQuote();
     this.rowOpen = false;
     const H = Math.min((c.badgeHeightCm || 34) / 100, YTOP - Y_MIN - 0.01);
     const W = Math.min(G.SHEET_W - 0.06, H * (c.aspect || 1.7));
