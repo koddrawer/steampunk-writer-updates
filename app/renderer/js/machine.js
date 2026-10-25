@@ -20,10 +20,11 @@ function gearAngles(s, dyaw) {
   return {
     FrontAssembly: thF, Gear_FrontDrive_L: thF, Gear_FrontDrive_R: thF,
     RollAssembly: thR, Gear_RollDrive_L: thR, Gear_RollDrive_R: thR,
-    BigWheel_Left: -thF * TEETH.front / TEETH.big, Pulley_Left: -thF * TEETH.front / TEETH.big,
+    // trục truyền chung: bánh đà lớn + puli bên trái và bánh vít bên phải cùng một trục -> quay cùng góc
+    BigWheel_Left: -thF * TEETH.front / TEETH.big, Pulley_Left: -thF * TEETH.front / TEETH.big, Gear_Worm_R: -thF * TEETH.front / TEETH.big,
     Gear_Idler_L: -thR * TEETH.rollL / TEETH.idler,
-    Gear_Worm_R: -thR * TEETH.rollR / TEETH.worm,
-    Gear_Small_R: -thF * TEETH.frontR / TEETH.small,
+    // 2 bánh răng nhỏ hai bên ăn khớp với bánh răng trục giấy trước (quay ngược chiều)
+    Gear_Small_R: -thF * TEETH.front / TEETH.small, 'Gear_Small_R.001': -thF * TEETH.frontR / TEETH.small,
     DriveShaft_ArmToFeeder: thF * 2.5, 'DriveShaft_Gear0.73': thF * 2.5, 'DriveShaft_Gear1.28': thF * 2.5,
     Turret_DriveGear: -dyaw * TEETH.turret / TEETH.turretDrive,
   };
@@ -109,7 +110,7 @@ export class Machine {
       if (m) o.material = m;
     });
     model.updateMatrixWorld(true);
-    const byName = (n) => model.getObjectByName(n);
+    const byName = (n) => model.getObjectByName(n) || model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n));
 
     // ---- bánh răng / trục quay: pivot ở tâm, quay quanh trục world
     this.spin = [];

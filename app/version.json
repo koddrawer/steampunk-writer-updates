@@ -1,6 +1,6 @@
 {
-  "version": "1.9.1",
+  "version": "1.10.0",
   "minShell": "1.0.0",
-  "notes": "Sửa kích thước khung donate không đều: phần mềm đo phần hoa văn thật của từng khung (bỏ lề trống trong ảnh) rồi co giãn để mọi khung, kể cả khung mẫu, cùng nằm vừa một ô kích thước như nhau. Mỗi khung ảnh có thêm thanh Cỡ khung để chỉnh tay nếu cần.",
+  "notes": "Cập nhật model máy mới: bỏ bớt chi tiết trang trí (hộp điều khiển, đồng hồ, lọ mực, cần gạt), bố trí lại trục truyền (bánh đà + puli + bánh vít cùng một trục) và thêm cặp bánh răng nhỏ hai bên ăn khớp với trục giấy trước. Các bánh răng quay đúng theo bộ truyền mới.",
   "date": "2026-10-25"
 }

@@ -102,7 +102,7 @@ roll = join(by_prefix("PaperRoll_", "RollLayer"), O["PaperRoll_Shaft"], "RollAss
 front = join(by_prefix("FrontRoller"), O["FrontRoller_Shaft"], "FrontAssembly")
 
 SPIN = ["BigWheel_Left", "Pulley_Left", "Gear_RollDrive_L", "Gear_Idler_L", "Gear_FrontDrive_L",
-        "Gear_RollDrive_R", "Gear_Worm_R", "Gear_FrontDrive_R", "Gear_Small_R", "Turret_DriveGear",
+        "Gear_RollDrive_R", "Gear_Worm_R", "Gear_FrontDrive_R", "Gear_Small_R", "Gear_Small_R.001", "Gear_Small_L", "Turret_DriveGear",
         "DriveShaft_ArmToFeeder", "RollAssembly", "FrontAssembly"] + [o.name for o in by_prefix("DriveShaft_Gear")]
 spin = {}
 for n in SPIN:
