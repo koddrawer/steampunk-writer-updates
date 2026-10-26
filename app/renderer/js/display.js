@@ -71,7 +71,9 @@ const DEFAULT_CAMS = {
   donor: { pos: [-0.17, 1.55, 0.95], target: [-0.17, 0.30, 0.20], fov: 30 },
   quote: { pos: [-0.17, 2.6, 1.25], target: [-0.17, 0.30, -0.05], fov: 55 },
 };
-const camOf = (name) => (cfg.display.cameras && cfg.display.cameras[name]) || DEFAULT_CAMS[name];
+const MODEL = cfg.display.model || 'drafting';
+const camKey = (name) => MODEL === 'classic' ? name : MODEL + ':' + name;     // góc camera lưu riêng cho từng model
+const camOf = (name) => (cfg.display.cameras && cfg.display.cameras[camKey(name)]) || DEFAULT_CAMS[name];
 function applyCam(c) { camera.position.fromArray(c.pos); controls.target.fromArray(c.target); camera.fov = c.fov || 34; camera.updateProjectionMatrix(); controls.update(); }
 let tween = null, camMode = 'main';
 function tweenCam(c, sec = 1.6) {
@@ -142,7 +144,14 @@ const fonts = {
 
 // ---------- máy
 const bar = $('bar').firstElementChild;
-const machine = await new Machine(scene, '../assets/').load(p => { bar.style.width = Math.round(p * 100) + '%'; });
+const machine = await new Machine(scene, MODEL === 'classic' ? '../assets/' : `../assets/models/${MODEL}/`).load(p => { bar.style.width = Math.round(p * 100) + '%'; });
+if (machine.meta.cams) { Object.assign(DEFAULT_CAMS, machine.meta.cams); applyCam(camOf('main')); }
+// đèn theo kích thước từng model
+{ const lt = machine.meta.lights || {}; const P = (o, a) => a && o.position.set(...a);
+  if (lt.key) { P(L.key, lt.key.pos); P(L.key.target, lt.key.target); const b = lt.key.box || 2; Object.assign(L.key.shadow.camera, { left: -b, right: b, top: b, bottom: -b, far: lt.key.far || 8 }); L.key.shadow.camera.updateProjectionMatrix(); }
+  if (lt.spot) { P(L.spot, lt.spot.pos); P(L.spot.target, lt.spot.target); L.spot.shadow.camera.far = lt.spot.far || 8; if (lt.spot.angle) L.spot.angle = lt.spot.angle; L.spot.shadow.camera.updateProjectionMatrix(); }
+  if (lt.rim) P(L.rim, lt.rim.pos);
+  if (lt.glow) { P(L.glow, lt.glow.pos); if (lt.glow.dist) L.glow.distance = lt.glow.dist; } }
 const paper = new Paper(machine, { pxPerM: cfg.writer.paper?.pxPerM || 1600, inkColor: cfg.writer.paper?.inkColor || '#1d140c' });
 machine.attachPaper(paper, { tint: cfg.writer.paper?.tint || '#f3e6cc', grain: cfg.writer.paper?.grain ?? 1 });
 // cuộn giấy dùng cùng vân giấy
@@ -187,7 +196,9 @@ function report() { api.send('display:status', { busy: writer.busy, job: writer.
 api.on('job:available', () => pull());
 
 api.on('config', (c) => {
-  const old = cfg; cfg = c; applyDisplayCfg(); vbox.layout(); music.sync();
+  const old = cfg; cfg = c;
+  if ((c.display.model || 'drafting') !== MODEL) { location.reload(); return; }   // đổi model: tải lại màn hiển thị
+  applyDisplayCfg(); vbox.layout(); music.sync();
   const op = old.writer.paper || {}, np = c.writer.paper || {};
   if (np.inkColor && np.inkColor !== op.inkColor) { paper.setInk(np.inkColor); writer.imageCache.clear(); }
   if (np.tint !== op.tint && paper.mat) { paper.mat.color.set(np.tint || '#f3e6cc'); machine.mats.PaperRoll.color.set(np.tint || '#f3e6cc'); }
@@ -199,8 +210,8 @@ api.on('display:cmd', (m) => {
   if (m.cmd === 'abortJob') writer.abort();
   if (m.cmd === 'glowTest') { const g = cfg.writer.glow || {}; paper.glow(paper.lastBox, { sec: g.sec ?? 1.8, color: g.color || '#ffc94a', strength: g.strength ?? 1 }); }
   if (m.cmd === 'camera') goCam(m.name || 'main', m.sec ?? 1.2);
-  if (m.cmd === 'resetCamera') { const n = m.name || 'main'; camMode = n; tweenCam(DEFAULT_CAMS[n], 1); api.send('display:camera', { name: n, cam: null }); }
-  if (m.cmd === 'saveCamera') api.send('display:camera', { name: m.name || 'main', cam: { pos: camera.position.toArray().map(r4), target: controls.target.toArray().map(r4), fov: camera.fov } });
+  if (m.cmd === 'resetCamera') { const n = m.name || 'main'; camMode = n; tweenCam(DEFAULT_CAMS[n], 1); api.send('display:camera', { name: camKey(n), cam: null }); }
+  if (m.cmd === 'saveCamera') api.send('display:camera', { name: camKey(m.name || 'main'), cam: { pos: camera.position.toArray().map(r4), target: controls.target.toArray().map(r4), fov: camera.fov } });
 });
 const r4 = v => Math.round(v * 1e4) / 1e4;
 

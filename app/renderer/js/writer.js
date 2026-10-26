@@ -1,13 +1,13 @@
 // Bộ lập kế hoạch nét + điều khiển chuyển động ngòi bút (nhấc/hạ bút, di chuyển, kéo giấy).
-import { G } from './machine.js';
+import { G, AREA } from './machine.js';
 import { layoutText, textToStrokes, strokesLength, sanitize, hasRenderable, wrapText, sortLTR } from './text.js';
 import { buildBadge, TEMPLATES } from './badge.js';
 import { processFrame, placeName } from './frameimg.js';
 
 const LIFT = 0.012;          // nhấc bút 12 mm
 const PARK = { x: G.SHEET_X1 - 0.06, y: -0.22 };
-const YTOP = -0.035;         // mép trên vùng viết (phía cuộn giấy)
-const Y_MIN = G.FR_Y + 0.025;
+let YTOP = -0.035;           // mép trên vùng viết (phía cuộn giấy) – lấy theo model khi tạo Writer
+let Y_MIN = G.FR_Y + 0.025;
 
 function optimizeOrder(strokes, start) {
   // tham lam: luôn chọn nét có đầu gần nhất, cho phép đảo chiều nét hở
@@ -29,6 +29,7 @@ function optimizeOrder(strokes, start) {
 export class Writer {
   constructor(machine, paper, fonts, cfgGetter, hooks = {}) {
     this.m = machine; this.p = paper; this.fonts = fonts; this.cfg = cfgGetter; this.hooks = hooks;
+    YTOP = AREA.ytop; Y_MIN = AREA.ymin; PARK.x = AREA.park[0]; PARK.y = AREA.park[1];
     this.pen = { x: PARK.x, y: PARK.y, z: G.PAPER_Z + 0.05 };
     this.steps = []; this.step = null;
     this.contentHigh = -Infinity; this.rowOpen = false; this.xCur = 0; this.rowH = 0;

@@ -7,8 +7,10 @@ export const G = {
   PX0: -0.82, PX1: 0.48, ROLL_Y: 0.33, ROLL_Z: 0.62, ROLL_R: 0.13,
   FR_Y: -0.44, FR_Z: 0.237, FR_R: 0.06, BED_Z: 0.30,
 };
-G.SHEET_X0 = G.PX0 + 0.01; G.SHEET_X1 = G.PX1 - 0.01; G.SHEET_W = G.SHEET_X1 - G.SHEET_X0;
-G.PAPER_Z = G.BED_Z + 0.003;
+function deriveG() { G.SHEET_X0 = G.PX0 + 0.01; G.SHEET_X1 = G.PX1 - 0.01; G.SHEET_W = G.SHEET_X1 - G.SHEET_X0; G.PAPER_Z = G.BED_Z + 0.003; }
+deriveG();
+// vùng viết trên bàn (Blender Y): mép trên, mép dưới, chỗ đỗ bút – mỗi model một khác
+export const AREA = { ytop: -0.035, ymin: G.FR_Y + 0.025, park: [G.SHEET_X1 - 0.06, -0.22] };
 
 export const b2t = (x, y, z) => new THREE.Vector3(x, z, -y);       // Blender -> three
 const v3 = a => b2t(a[0], a[1], a[2]);
@@ -90,6 +92,9 @@ export class Machine {
   async load(onProgress) {
     const meta = await (await fetch(this.base + 'machine.json')).json();
     this.meta = meta;
+    if (meta.G) { Object.assign(G, meta.G); deriveG(); }
+    if (meta.write) { AREA.ytop = meta.write.ytop; AREA.ymin = meta.write.ymin; AREA.park = meta.write.park; }
+    else { AREA.ymin = G.FR_Y + 0.025; AREA.park = [G.SHEET_X1 - 0.06, -0.22]; }
     const tl = new THREE.TextureLoader();
     const ld = (f) => new Promise(r => tl.load(this.base + f, t => r(t), undefined, () => r(null)));
     const [diff, norm] = await Promise.all([ld(meta.paperTextures.diffuse || 'paper_diffuse.jpg'), ld(meta.paperTextures.normal || 'paper_normal.jpg')]);
@@ -108,6 +113,11 @@ export class Machine {
       let m = this.mats[n];
       if (n === 'Cold Pressed Paper - 01' || /Paper/i.test(n || '') && !m) m = this.mats.PaperRoll;
       if (m) o.material = m;
+      else if (meta.material && o.material) {               // model ảnh nướng (Tripo): chỉnh độ bóng cho hợp đèn
+        o.material.roughness = meta.material.roughness ?? o.material.roughness;
+        o.material.metalness = meta.material.metalness ?? o.material.metalness;
+        if (o.material.map) o.material.map.anisotropy = 8;
+      }
     });
     model.updateMatrixWorld(true);
     const byName = (n) => model.getObjectByName(n) || model.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n));
@@ -126,10 +136,13 @@ export class Machine {
     const B = meta.bones;
     this.SH = v3(B.Upper[0]); this.ELB0 = v3(B.Upper[1]); this.W0 = v3(B.Fore[1]); this.TIP0 = v3(B.Pen[1]);
     this.L1 = this.SH.distanceTo(this.ELB0); this.L2 = this.ELB0.distanceTo(this.W0);
-    this.penOff = this.W0.y - this.TIP0.y;
-    this.yaw0 = Math.atan2(-(this.W0.z - this.SH.z), this.W0.x - this.SH.x);  // yaw theo Blender
-    const yawP = new THREE.Group(); yawP.position.copy(this.SH); this.root.add(yawP);
-    const shP = new THREE.Group(); yawP.add(shP);
+    this.penVec = this.W0.clone().sub(this.TIP0);                                 // ngòi bút -> cổ tay (giữ nguyên hướng, chỉ xoay theo đế)
+    this.AX = meta.yawAxis ? v3(meta.yawAxis) : this.SH.clone(); this.AX.y = this.SH.y;   // trục xoay đứng của đế
+    this.shOff = this.SH.clone().sub(this.AX);
+    this.yaw0 = Math.atan2(-(this.TIP0.z - this.AX.z), this.TIP0.x - this.AX.x);
+    if (!meta.yawAxis) this.yaw0 = Math.atan2(-(this.W0.z - this.SH.z), this.W0.x - this.SH.x);
+    const yawP = new THREE.Group(); yawP.position.copy(this.AX); this.root.add(yawP);
+    const shP = new THREE.Group(); shP.position.copy(this.shOff); yawP.add(shP);
     const elP = new THREE.Group(); elP.position.copy(this.ELB0).sub(this.SH); shP.add(elP);
     const penP = new THREE.Group(); penP.position.copy(this.W0); this.root.add(penP);
     this.root.updateMatrixWorld(true);
@@ -169,10 +182,14 @@ export class Machine {
     const p0 = [G.ROLL_Y - G.ROLL_R * 0.995, G.ROLL_Z - 0.01], p1 = [G.ROLL_Y - G.ROLL_R - 0.03, G.ROLL_Z - 0.25], p2 = [0.16, z0], p3 = [0, z0];
     for (let i = 1; i <= 40; i++) prof.push(bez(p0, p1, p2, p3, i / 40));
     this.bedStartIdx = prof.length - 1;
-    for (let i = 1; i <= 40; i++) prof.push([G.FR_Y * i / 40, z0]);
+    // trục trước cao hơn mặt bàn (model mới): thêm đoạn dốc lên đỉnh trục
+    const frTop = G.FR_Z + G.FR_R + 0.003, ramp = Math.max(0, frTop - z0) > 0.005 ? Math.min(0.5, (frTop - z0) * 8) : 0;
+    for (let i = 1; i <= 40; i++) prof.push([(G.FR_Y + ramp) * i / 40, z0]);
+    if (ramp) for (let i = 1; i <= 8; i++) { const u = i / 8, e = u * u * (3 - 2 * u); prof.push([G.FR_Y + ramp * (1 - u), z0 + (frTop - z0) * e]); }
     for (let i = 1; i <= 36; i++) { const a = Math.PI / 2 + i * (Math.PI * 0.95) / 36; prof.push([G.FR_Y + Math.cos(a) * (G.FR_R + 0.003), G.FR_Z + Math.sin(a) * (G.FR_R + 0.003)]); }
     const cum = [0]; for (let i = 1; i < prof.length; i++) cum.push(cum[i - 1] + Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]));
     this.sheetLen = cum[cum.length - 1]; this.aBed0 = cum[this.bedStartIdx];
+    this.inkStart = this.meta && this.meta.write ? Math.max(0, this.arcAt(AREA.ytop + 0.06)) : 0;
     const pos = [], uv = [], idx = [];
     prof.forEach(([y, z], i) => {
       for (const [k, x] of [[0, G.SHEET_X0], [1, G.SHEET_X1]]) { const p = b2t(x, y, z); pos.push(p.x, p.y, p.z); uv.push(k, 1 - cum[i] / this.sheetLen); }
@@ -198,20 +215,25 @@ export class Machine {
   // ---- IK: đặt ngòi bút tại (x,y) bed (Blender) với độ cao z
   setPen(x, y, z) {
     const T = b2t(x, y, z); this.tip.copy(T);
-    const W = T.clone(); W.y += this.penOff;
-    const d = W.clone().sub(this.SH);
+    const up = new THREE.Vector3(0, 1, 0);
+    let yaw;
+    if (this.meta.yawAxis) yaw = Math.atan2(-(T.z - this.AX.z), T.x - this.AX.x);
+    else { const W1 = T.clone().add(this.penVec); yaw = Math.atan2(-(W1.z - this.SH.z), W1.x - this.SH.x); }
+    const dy0 = yaw - this.yaw0;
+    const W = T.clone().add(this.penVec.clone().applyAxisAngle(up, dy0));
+    const SHw = this.AX.clone().add(this.shOff.clone().applyAxisAngle(up, dy0));
+    const d = W.clone().sub(SHw);
     const dh = Math.hypot(d.x, d.z) || 1e-6;
-    const yaw = Math.atan2(-d.z, d.x);
     let D = Math.hypot(dh, d.y);
     D = Math.min(Math.max(D, Math.abs(this.L1 - this.L2) + 1e-3), this.L1 + this.L2 - 1e-4);
     const a = Math.atan2(d.y, dh) + Math.acos(THREE.MathUtils.clamp((this.L1 ** 2 + D * D - this.L2 ** 2) / (2 * this.L1 * D), -1, 1));
     const hd = new THREE.Vector3(d.x / dh, 0, d.z / dh);
-    const E = this.SH.clone().addScaledVector(hd, Math.cos(a) * this.L1); E.y += Math.sin(a) * this.L1;
-    const dy = yaw - this.yaw0; this.dyaw = dy;
+    const E = SHw.clone().addScaledVector(hd, Math.cos(a) * this.L1); E.y += Math.sin(a) * this.L1;
+    const dy = dy0; this.dyaw = dy;
     this.yawP.rotation.set(0, dy, 0);
     const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dy);
     const u0 = this.ELB0.clone().sub(this.SH).normalize();
-    const u1 = E.clone().sub(this.SH).applyQuaternion(qy.clone().invert()).normalize();
+    const u1 = E.clone().sub(SHw).applyQuaternion(qy.clone().invert()).normalize();
     const q1 = new THREE.Quaternion().setFromUnitVectors(u0, u1);
     this.shP.quaternion.copy(q1);
     const f0 = this.W0.clone().sub(this.ELB0).normalize();

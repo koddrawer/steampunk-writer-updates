@@ -7,7 +7,9 @@ export class Paper {
     this.m = machine;
     this.ppm = pxPerM;
     this.W = Math.round(G.SHEET_W * pxPerM);
-    this.H = Math.round(machine.sheetLen * pxPerM);
+    // canvas mực chỉ phủ phần giấy từ trên vùng viết tới hết (đỡ tốn bộ nhớ với bàn viết dài)
+    this.inkStart = machine.inkStart || 0; this.inkLen = machine.sheetLen - this.inkStart;
+    this.H = Math.round(this.inkLen * pxPerM);
     this.cv = document.createElement('canvas'); this.cv.width = this.W; this.cv.height = this.H;
     this.ctx = this.cv.getContext('2d', { willReadFrequently: false });
     this.ctx.lineCap = 'round'; this.ctx.lineJoin = 'round';
@@ -29,25 +31,27 @@ export class Paper {
     for (const t of [mat.map, mat.normalMap]) if (t) { t.repeat.set(G.SHEET_W / tile, sheetLen / tile); t.needsUpdate = true; }
     this.tile = tile; this.sheetLen = sheetLen; this.mat = mat;
     const gTile = 0.32;
-    const U = this.uniforms = { inkMap: { value: this.tex }, inkShift: { value: 0 }, inkTint: { value: new THREE.Color(this.ink) },
+    const U = this.uniforms = { inkMap: { value: this.tex }, inkShift: { value: 0 }, inkScale: { value: sheetLen / this.inkLen }, inkOff: { value: this.inkStart / this.inkLen }, inkTint: { value: new THREE.Color(this.ink) },
       grainMap: { value: this.grainTex }, grainRep: { value: new THREE.Vector2(G.SHEET_W / gTile, sheetLen / gTile) }, grainOff: { value: 0 },
       grainAmt: { value: opts.grain ?? 1 },
       glowRect: { value: new THREE.Vector4(0, 0, 0, 0) }, glowT: { value: -1 }, glowCol: { value: new THREE.Color('#ffc94a') }, glowAmt: { value: 1 } };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = 'varying vec2 vInkUv;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n vInkUv = uv;');
-      sh.fragmentShader = 'uniform sampler2D inkMap; uniform float inkShift; uniform vec3 inkTint; varying vec2 vInkUv;\n' +
+      sh.fragmentShader = 'uniform sampler2D inkMap; uniform float inkShift; uniform float inkScale; uniform float inkOff; uniform vec3 inkTint; varying vec2 vInkUv;\n' +
         'uniform sampler2D grainMap; uniform vec2 grainRep; uniform float grainOff; uniform float grainAmt;\n' +
         'vec3 vGlowE = vec3(0.0);\n' + 'uniform vec4 glowRect; uniform float glowT; uniform vec3 glowCol; uniform float glowAmt;\n' + sh.fragmentShader
         .replace('#include <map_fragment>', `#include <map_fragment>
           vec4 gr = texture2D(grainMap, vec2(vInkUv.x * grainRep.x, vInkUv.y * grainRep.y + grainOff));
           diffuseColor.rgb *= mix(vec3(1.0), gr.rgb * 1.18, grainAmt);
-          vec4 inkS = texture2D(inkMap, vec2(vInkUv.x, vInkUv.y + inkShift));
+          vec2 iuv0 = vec2(vInkUv.x, 1.0 - (1.0 - vInkUv.y) * inkScale + inkOff + inkShift);
+          vec4 inkS = texture2D(inkMap, iuv0);
+          inkS.a *= step(iuv0.y, 1.0);
           float inkA = inkS.a * mix(1.0, smoothstep(0.15, 0.75, gr.a) * 0.35 + 0.65, grainAmt);
           diffuseColor.rgb = mix(diffuseColor.rgb, inkS.rgb, inkA * 0.95);
           // hiệu ứng ánh vàng sau khi viết xong: chữ chuyển sang vàng kim, có vệt sáng quét trái -> phải rồi tắt dần
           if (glowT >= 0.0) {
-            vec2 iuv = vec2(vInkUv.x, vInkUv.y + inkShift);
+            vec2 iuv = iuv0;
             vec2 m2 = smoothstep(glowRect.xy - 0.02, glowRect.xy, iuv) * (1.0 - smoothstep(glowRect.zw, glowRect.zw + 0.02, iuv));
             float inR = m2.x * m2.y;
             float gt = clamp(glowT, 0.0, 1.0);
@@ -69,7 +73,7 @@ export class Paper {
 
   // toạ độ bed (Blender x,y) -> pixel canvas
   toPx(x, y) {
-    const a = this.m.arcAt(y) - this.shiftRem;
+    const a = this.m.arcAt(y) - this.inkStart - this.shiftRem;
     return [(x - G.SHEET_X0) / G.SHEET_W * this.W, a * this.ppm];
   }
 
@@ -112,7 +116,7 @@ export class Paper {
     this.syncUniforms();
   }
   syncUniforms() {
-    if (this.uniforms) { this.uniforms.inkShift.value = this.shiftRem / this.sheetLen; this.uniforms.grainOff.value = this.s / 0.32; }
+    if (this.uniforms) { this.uniforms.inkShift.value = this.shiftRem / this.inkLen; this.uniforms.grainOff.value = this.s / 0.32; }
     const off = this.s / this.tile;
     if (this.mat) for (const t of [this.mat.map, this.mat.normalMap]) if (t) t.offset.y = off;
   }

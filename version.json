@@ -1,6 +1,6 @@
 {
-  "version": "1.10.0",
+  "version": "1.11.0",
   "minShell": "1.0.0",
-  "notes": "Cập nhật model máy mới: bỏ bớt chi tiết trang trí (hộp điều khiển, đồng hồ, lọ mực, cần gạt), bố trí lại trục truyền (bánh đà + puli + bánh vít cùng một trục) và thêm cặp bánh răng nhỏ hai bên ăn khớp với trục giấy trước. Các bánh răng quay đúng theo bộ truyền mới.",
-  "date": "2026-10-25"
+  "notes": "Đổi sang model máy vẽ steampunk mới (drafting machine). Tay robot được tách thành đế xoay, tay trên, tay dưới, đầu bút và cử động theo ngòi bút; cuộn giấy và trục trước quay theo giấy; giấy có sẵn chữ trong model được thay bằng giấy thật của app. Có thể chọn lại máy cũ ở thẻ Hiển thị & Camera → Model máy.",
+  "date": "2026-10-26"
 }
