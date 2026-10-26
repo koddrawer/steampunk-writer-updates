@@ -1,6 +1,6 @@
 {
-  "version": "1.11.0",
+  "version": "1.11.1",
   "minShell": "1.0.0",
-  "notes": "Đổi sang model máy vẽ steampunk mới (drafting machine). Tay robot được tách thành đế xoay, tay trên, tay dưới, đầu bút và cử động theo ngòi bút; cuộn giấy và trục trước quay theo giấy; giấy có sẵn chữ trong model được thay bằng giấy thật của app. Có thể chọn lại máy cũ ở thẻ Hiển thị & Camera → Model máy.",
+  "notes": "Bỏ model drafting machine, quay về máy viết cũ. Bản cập nhật nhẹ lại như trước; góc camera đã lưu của máy cũ được giữ nguyên.",
   "date": "2026-10-26"
 }

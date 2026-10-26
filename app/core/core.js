@@ -56,6 +56,9 @@ module.exports = async function start(ctx) {
     if ((cfg.display.followPen ?? 60) === 60) cfg.display.followPen = 100;
     cfg.configVersion = 4;
   }
+  // v5 (bản 1.11.1): bỏ model drafting, quay về máy cũ
+  if ((saved.configVersion || 1) < 5) { cfg.display.model = 'classic'; cfg.configVersion = 5; }
+  if (cfg.display.model !== 'classic') cfg.display.model = 'classic';
   let saveT = null;
   const save = () => { clearTimeout(saveT); saveT = setTimeout(() => fs.writeFile(cfgFile, JSON.stringify(cfg, null, 1), () => { }), 300); };
   const getCfg = () => cfg;

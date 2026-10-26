@@ -537,9 +537,6 @@ function renderFonts() {
 // ================= TAB: Hiển thị & camera
 function renderDisplay() {
   $('#tab-display').replaceChildren(h('div', { class: 'grid' },
-    card('Model máy',
-      field('display.model', 'Model', 'select', { options: [['drafting', 'Máy vẽ steampunk mới (drafting machine)'], ['classic', 'Máy viết cũ']] }),
-      note('Đổi model thì màn hiển thị tự tải lại. Góc camera đã lưu được giữ riêng cho từng model.')),
     card('Cửa sổ hiển thị 9:16',
       h('div', { class: 'btns' }, ...[[405, 720], [540, 960], [720, 1280], [1080, 1920]].map(([w, hh]) => btn(`${w}×${hh}`, () => api.invoke('win:displaySize', w, hh), 'sm'))),
       field('display.frameless', 'Ẩn khung cửa sổ (không viền)', 'bool', { tip: 'Tắt = có khung để kéo di chuyển và đổi cỡ. Áp dụng khi tải lại màn hiển thị' }),

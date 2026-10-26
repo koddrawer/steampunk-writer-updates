@@ -71,7 +71,7 @@ const DEFAULT_CAMS = {
   donor: { pos: [-0.17, 1.55, 0.95], target: [-0.17, 0.30, 0.20], fov: 30 },
   quote: { pos: [-0.17, 2.6, 1.25], target: [-0.17, 0.30, -0.05], fov: 55 },
 };
-const MODEL = cfg.display.model || 'drafting';
+const MODEL = 'classic';
 const camKey = (name) => MODEL === 'classic' ? name : MODEL + ':' + name;     // góc camera lưu riêng cho từng model
 const camOf = (name) => (cfg.display.cameras && cfg.display.cameras[camKey(name)]) || DEFAULT_CAMS[name];
 function applyCam(c) { camera.position.fromArray(c.pos); controls.target.fromArray(c.target); camera.fov = c.fov || 34; camera.updateProjectionMatrix(); controls.update(); }
@@ -197,7 +197,6 @@ api.on('job:available', () => pull());
 
 api.on('config', (c) => {
   const old = cfg; cfg = c;
-  if ((c.display.model || 'drafting') !== MODEL) { location.reload(); return; }   // đổi model: tải lại màn hiển thị
   applyDisplayCfg(); vbox.layout(); music.sync();
   const op = old.writer.paper || {}, np = c.writer.paper || {};
   if (np.inkColor && np.inkColor !== op.inkColor) { paper.setInk(np.inkColor); writer.imageCache.clear(); }

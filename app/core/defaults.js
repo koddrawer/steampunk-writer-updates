@@ -6,7 +6,7 @@ const builtinFont = (id, name, fam, w, subs = ['latin', 'latin-ext', 'vietnamese
 const NO_VN = ['latin', 'latin-ext'];
 
 module.exports = {
-  configVersion: 4,
+  configVersion: 5,
   tiktok: { username: '', signApiKey: '', autoConnect: false, autoReconnect: true },
   fonts: [
     builtinFont('great-vibes', 'Great Vibes (chữ ký)', 'great-vibes', 400),
@@ -130,7 +130,7 @@ module.exports = {
   display: {
     width: 540, height: 960, frameless: false, alwaysOnTop: false, renderScale: 1, bgColor: '#2a2018', bgImage: '',
     lighting: 'cinematic', keyLight: 1, bloom: 0.25, vignette: 0.6, table: true,
-    exposure: 1.05, floorShadow: 0.28, mouseCamera: true, donorZoom: true, donorHoldSec: 4, followPen: 100, followSpeed: 14, model: 'drafting', quoteCam: true, cameras: {}, dragWindow: false,
+    exposure: 1.05, floorShadow: 0.28, mouseCamera: true, donorZoom: true, donorHoldSec: 4, followPen: 100, followSpeed: 14, model: 'classic', quoteCam: true, cameras: {}, dragWindow: false,
     videoBox: { x: 0.56, y: 0.04, w: 0.4, h: 0.3 },
   },
   music: { enabled: true, files: [], shuffle: true, volume: 0.35, crossfadeSec: 3, duck: true, duckPct: 25, duckCats: ['greet', 'thanks'] },
