@@ -1,5 +1,6 @@
 // Bảng điều khiển
 import { templateThumb, imageThumb } from './thumbs.js';
+if (!window.api && window.parent !== window && window.parent.__panelApi) { window.api = window.parent.__panelApi(window); document.documentElement.classList.add('mobile'); }
 const api = window.api;
 let cfg = await api.getConfig();
 const $ = (s, r = document) => r.querySelector(s);
@@ -537,7 +538,14 @@ function renderFonts() {
 // ================= TAB: Hiển thị & camera
 function renderDisplay() {
   $('#tab-display').replaceChildren(h('div', { class: 'grid' },
-    card('Cửa sổ hiển thị 9:16',
+    api.mobile ? card('Điện thoại (Android)',
+      field('display.quality', 'Mức đồ hoạ', 'select', { options: [['low', 'Nhẹ (máy yếu)'], ['balanced', 'Cân bằng (máy tầm trung)'], ['high', 'Đẹp nhất (máy mạnh)']], tip: 'Đổi xong bấm Tải lại màn hiển thị' }),
+      field('display.mobileFps', 'Giới hạn khung hình', 'select', { num: true, options: [[30, '30 fps (mát máy, đỡ pin)'], [45, '45 fps'], [60, '60 fps (mượt nhất)']] }),
+      field('display.adaptive', 'Tự hạ độ phân giải khi máy không theo kịp', 'bool'),
+      field('display.renderScale', 'Độ nét render', 'range', { min: 0.5, max: 1.25, step: 0.05, unit: '×' }),
+      note('Khi mở bảng điều khiển, màn máy tự giảm còn 15 fps để bảng chạy mượt. Chạm vào màn máy để hiện nút ⚙ mở lại bảng.'),
+      h('div', { class: 'btns' }, btn('Tải lại màn hiển thị', () => api.invoke('win:recreateDisplay')))) : null,
+    api.mobile ? null : card('Cửa sổ hiển thị 9:16',
       h('div', { class: 'btns' }, ...[[405, 720], [540, 960], [720, 1280], [1080, 1920]].map(([w, hh]) => btn(`${w}×${hh}`, () => api.invoke('win:displaySize', w, hh), 'sm'))),
       field('display.frameless', 'Ẩn khung cửa sổ (không viền)', 'bool', { tip: 'Tắt = có khung để kéo di chuyển và đổi cỡ. Áp dụng khi tải lại màn hiển thị' }),
       note('Trong LIVE Studio dùng Window capture và chọn chỉ lấy phần nội dung (client area) để không dính thanh tiêu đề.'),
@@ -605,6 +613,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 });
 api.on('config', (c) => { const fontsChanged = JSON.stringify(c.fonts) !== JSON.stringify(cfg.fonts); cfg = c; if (fontsChanged) refreshFontFaces(); binds.forEach(f => f()); });
 api.on('log', addLog);
+api.on('toast', (m) => toast(m));
 api.on('queue', renderQueue);
 api.on('video:status', renderVStat);
 api.on('music:status', renderMStat);

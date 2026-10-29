@@ -39,12 +39,12 @@ float h3(vec3 p){ p = fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(
 float n3(vec3 x){ vec3 i=floor(x); vec3 f=fract(x); f=f*f*(3.0-2.0*f);
  return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),
             mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z); }
-float fbm(vec3 p){ float a=.5, s=0.; for(int i=0;i<5;i++){ s+=a*n3(p); p*=2.03; a*=.5;} return s; }
+float fbm(vec3 p){ float a=.5, s=0.; for(int i=0;i<NOISE_OCT;i++){ s+=a*n3(p); p*=2.03; a*=.5;} return s; }
 `;
 function patch(mat, kind, opts = {}) {
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = 'varying vec3 vOPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vOPos = position;');
-    sh.fragmentShader = NOISE + sh.fragmentShader;
+    sh.fragmentShader = `#define NOISE_OCT ${QUALITY.noiseOct}\n` + NOISE + sh.fragmentShader;
     if (kind === 'metal') {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -62,7 +62,7 @@ function patch(mat, kind, opts = {}) {
           diffuseColor.rgb = mix(c1, c2, ring*0.7 + fine*0.4);`);
     }
   };
-  mat.customProgramCacheKey = () => kind + JSON.stringify(opts);
+  mat.customProgramCacheKey = () => kind + JSON.stringify(opts) + QUALITY.noiseOct;
   return mat;
 }
 
@@ -248,11 +248,43 @@ export class Machine {
     const ang = gearAngles(this.s, this.dyaw || 0);
     for (const g of this.spin) { const a = ang[g.name]; if (a !== undefined) g.piv.quaternion.setFromAxisAngle(g.ax, a); }
     this.root.updateMatrixWorld(true);
+    // ống dây: chỉ dựng lại khi tay robot thật sự di chuyển, và ghi đè vào bộ đệm cũ (không tạo hình mới mỗi khung)
+    const key = [this.yawP.quaternion, this.shP.quaternion, this.elP.quaternion, this.penP.position].map(v => v.toArray().map(n => n.toFixed(4)).join()).join('|');
+    if (key === this._hoseKey) return;
+    this._hoseKey = key;
     for (const h of this.hoses) {
       const pts = h.pts.map(p => p.g.localToWorld(p.local.clone()));
-      const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-      h.mesh.geometry.dispose();
-      h.mesh.geometry = new THREE.TubeGeometry(curve, 64, h.r, 8, false);
+      if (!h.curve) h.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); else h.curve.points = pts;
+      updateTube(h, h.curve, HOSE_SEG, h.r, 8);
     }
   }
+}
+
+// ---- ống mềm: tính lại đỉnh/pháp tuyến tại chỗ (giống TubeGeometry nhưng không cấp phát lại bộ đệm GPU)
+export const QUALITY = { hoseSeg: 64, noiseOct: 5 };
+const HOSE_SEG = 64;
+const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _p = new THREE.Vector3();
+function updateTube(h, curve, seg, r, rad) {
+  let geo = h.mesh.geometry;
+  if (!geo.attributes.position || geo.userData.seg !== seg) {
+    h.mesh.geometry.dispose();
+    geo = new THREE.TubeGeometry(curve, seg, r, rad, false); geo.userData.seg = seg;
+    geo.attributes.position.setUsage(THREE.DynamicDrawUsage); geo.attributes.normal.setUsage(THREE.DynamicDrawUsage);
+    h.mesh.geometry = geo; return;
+  }
+  const fr = curve.computeFrenetFrames(seg, false);
+  const P = geo.attributes.position.array, N = geo.attributes.normal.array;
+  let k = 0;
+  for (let i = 0; i <= seg; i++) {
+    curve.getPointAt(i / seg, _p);
+    const Nn = fr.normals[i], B = fr.binormals[i];
+    for (let j = 0; j <= rad; j++) {
+      const v = j / rad * Math.PI * 2, sin = Math.sin(v), cos = -Math.cos(v);
+      _n.set(cos * Nn.x + sin * B.x, cos * Nn.y + sin * B.y, cos * Nn.z + sin * B.z).normalize();
+      N[k] = _n.x; N[k + 1] = _n.y; N[k + 2] = _n.z;
+      P[k] = _p.x + r * _n.x; P[k + 1] = _p.y + r * _n.y; P[k + 2] = _p.z + r * _n.z; k += 3;
+    }
+  }
+  geo.attributes.position.needsUpdate = true; geo.attributes.normal.needsUpdate = true;
+  geo.computeBoundingSphere();
 }

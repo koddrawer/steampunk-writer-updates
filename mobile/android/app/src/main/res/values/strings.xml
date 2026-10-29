@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Steampunk Writer</string>
+    <string name="title_activity_main">Steampunk Writer</string>
+    <string name="package_name">com.koddrawer.steampunkwriter</string>
+    <string name="custom_url_scheme">com.koddrawer.steampunkwriter</string>
+</resources>

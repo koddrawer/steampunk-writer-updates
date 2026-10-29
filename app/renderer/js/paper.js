@@ -15,6 +15,9 @@ export class Paper {
     this.ctx.lineCap = 'round'; this.ctx.lineJoin = 'round';
     this.tex = new THREE.CanvasTexture(this.cv);
     this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.anisotropy = 8;
+    this.tex.flipY = false;     // hàng 0 của texture = hàng trên cùng canvas (để tải từng vùng nhỏ)
+    this.dirtyR = null; this.fullDirty = true; this.renderer = null;
+    this.shiftMaxPx = 160;      // dồn phần dịch giấy vào shader, chỉ dịch canvas thật khi quá ngưỡng (đỡ tải lại cả texture)
     this.tex.generateMipmaps = true; this.tex.minFilter = THREE.LinearMipmapLinearFilter;
     this.dirty = false; this.lastUpload = 0;
     this.shiftRem = 0;          // phần lẻ (m) chưa dịch trên canvas
@@ -44,9 +47,9 @@ export class Paper {
         .replace('#include <map_fragment>', `#include <map_fragment>
           vec4 gr = texture2D(grainMap, vec2(vInkUv.x * grainRep.x, vInkUv.y * grainRep.y + grainOff));
           diffuseColor.rgb *= mix(vec3(1.0), gr.rgb * 1.18, grainAmt);
-          vec2 iuv0 = vec2(vInkUv.x, 1.0 - (1.0 - vInkUv.y) * inkScale + inkOff + inkShift);
+          vec2 iuv0 = vec2(vInkUv.x, (1.0 - vInkUv.y) * inkScale - inkOff - inkShift);
           vec4 inkS = texture2D(inkMap, iuv0);
-          inkS.a *= step(iuv0.y, 1.0);
+          inkS.a *= step(0.0, iuv0.y);
           float inkA = inkS.a * mix(1.0, smoothstep(0.15, 0.75, gr.a) * 0.35 + 0.65, grainAmt);
           diffuseColor.rgb = mix(diffuseColor.rgb, inkS.rgb, inkA * 0.95);
           // hiệu ứng ánh vàng sau khi viết xong: chữ chuyển sang vàng kim, có vệt sáng quét trái -> phải rồi tắt dần
@@ -84,8 +87,11 @@ export class Paper {
     c.strokeStyle = style || this.ink;
     c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
     c.globalAlpha = 1;
-    const b = this.bb; if (b) { const r = c.lineWidth / 2 + 1;
+    const r = c.lineWidth / 2 + 2;
+    const b = this.bb; if (b) {
       b.x0 = Math.min(b.x0, ax - r, bx - r); b.x1 = Math.max(b.x1, ax + r, bx + r); b.y0 = Math.min(b.y0, ay - r, by - r); b.y1 = Math.max(b.y1, ay + r, by + r); }
+    const d = this.dirtyR || (this.dirtyR = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+    d.x0 = Math.min(d.x0, ax - r, bx - r); d.x1 = Math.max(d.x1, ax + r, bx + r); d.y0 = Math.min(d.y0, ay - r, by - r); d.y1 = Math.max(d.y1, ay + r, by + r);
     this.dirty = true;
   }
 
@@ -103,6 +109,11 @@ export class Paper {
     this.s += ds;
     this.shiftRem += ds;
     const px = Math.floor(this.shiftRem * this.ppm);
+    if (px >= this.shiftMaxPx) this.flushShift(); else this.syncUniforms();
+  }
+  // dịch thật nội dung canvas (gộp nhiều bước nhỏ thành 1 lần)
+  flushShift() {
+    const px = Math.floor(this.shiftRem * this.ppm);
     if (px >= 1) {
       const c = this.ctx;
       c.save(); c.globalCompositeOperation = 'copy';
@@ -111,7 +122,7 @@ export class Paper {
       c.clearRect(0, 0, this.W, px);
       this.shiftRem -= px / this.ppm;
       for (const b of [this.bb, this.glowBox, this.lastBox]) if (b) { b.y0 += px; b.y1 += px; }
-      this.dirty = true;
+      this.dirty = true; this.fullDirty = true;
     }
     this.syncUniforms();
   }
@@ -120,7 +131,7 @@ export class Paper {
     const off = this.s / this.tile;
     if (this.mat) for (const t of [this.mat.map, this.mat.normalMap]) if (t) t.offset.y = off;
   }
-  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; this.glowBox = null; this.lastBox = null; if (this.uniforms) this.uniforms.glowT.value = -1; }
+  clear() { this.ctx.clearRect(0, 0, this.W, this.H); this.dirty = true; this.fullDirty = true; this.glowBox = null; this.lastBox = null; if (this.uniforms) this.uniforms.glowT.value = -1; }
 
   // ghi lại vùng mực của một lượt viết (để làm hiệu ứng ánh vàng)
   trackStart() { this.bb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; }
@@ -143,8 +154,35 @@ export class Paper {
   }
 
   upload(now, minInterval = 33) {
-    if (this.dirty && now - this.lastUpload >= minInterval) { this.tex.needsUpdate = true; this.dirty = false; this.lastUpload = now; }
+    if (!this.dirty || now - this.lastUpload < minInterval) return;
+    this.lastUpload = now; this.dirty = false;
+    const d = this.dirtyR; this.dirtyR = null;
+    if (this.fullDirty || !d || !this.subUpload(d)) { this.tex.needsUpdate = true; this.fullDirty = false; }
   }
+  // tải riêng vùng vừa vẽ lên GPU (WebGL2), thay vì cả tấm canvas lớn
+  subUpload(d) {
+    const R = this.renderer; if (!R || !R.capabilities.isWebGL2) return false;
+    const props = R.properties.get(this.tex); const glTex = props && props.__webglTexture;
+    if (!glTex || props.__version !== this.tex.version) return false;
+    const x = Math.max(0, Math.floor(d.x0)), y = Math.max(0, Math.floor(d.y0));
+    const w = Math.min(this.W, Math.ceil(d.x1)) - x, h = Math.min(this.H, Math.ceil(d.y1)) - y;
+    if (w <= 0 || h <= 0) return true;
+    if (w * h > this.W * this.H * 0.5) return false;
+    const gl = R.getContext();
+    try {
+      R.state.bindTexture(gl.TEXTURE_2D, glTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, this.W); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, this.cv);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      if (this.tex.generateMipmaps) gl.generateMipmap(gl.TEXTURE_2D);
+      return true;
+    } catch (e) {
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      return false;
+    }
+  }
+
 }
 
 // Vân giấy thủ công (lặp liền): sợi giấy, lốm đốm, đốm ố – tạo một lần bằng canvas

@@ -1,6 +1,7 @@
 {
-  "version": "1.11.1",
+  "version": "1.12.0",
   "minShell": "1.0.0",
-  "notes": "Bỏ model drafting machine, quay về máy viết cũ. Bản cập nhật nhẹ lại như trước; góc camera đã lưu của máy cũ được giữ nguyên.",
-  "date": "2026-10-26"
+  "notes": "Tối ưu dựng hình: giấy chỉ tải lại vùng mực vừa vẽ lên GPU, gộp các bước cuộn giấy, ống dây không dựng lại khi tay đứng yên (mượt hơn, đỡ nóng máy). Chuẩn bị cho bản Android.",
+  "date": "2026-10-29",
+  "minApk": 1
 }

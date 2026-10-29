@@ -6,14 +6,17 @@ import { EffectComposer } from '../lib/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from '../lib/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../lib/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../lib/addons/postprocessing/OutputPass.js';
-import { Machine, G, b2t } from './machine.js';
+import { Machine, G, b2t, QUALITY } from './machine.js';
 import { Paper } from './paper.js';
 import { Writer } from './writer.js';
 import { loadChain } from './text.js';
 import { VideoBox } from './videobox.js';
 import { Music } from './music.js';
 
+// bản Android (Capacitor): lõi chạy ngay trong WebView
+if (!window.api && window.Capacitor) await (await import('./mobile/api.js')).ready;
 const api = window.api;
+const MOBILE = !!api.mobile;
 const $ = (id) => document.getElementById(id);
 const errBox = $('err');
 window.addEventListener('error', e => { errBox.textContent = String(e.message || e); });
@@ -21,13 +24,19 @@ window.addEventListener('unhandledrejection', e => { errBox.textContent = String
 
 let cfg = await api.getConfig();
 const getCfg = () => cfg;
+// mức đồ hoạ (điện thoại cấu hình trung bình: 'balanced')
+const QP = { low: { oct: 2, shadow: 512, dprCap: 1.5, fps: 30 }, balanced: { oct: 3, shadow: 1024, dprCap: 2, fps: 60 }, high: { oct: 5, shadow: 2048, dprCap: 3, fps: 60 } };
+const QL = MOBILE ? (QP[cfg.display.quality] || QP.balanced) : QP.high;
+QUALITY.noiseOct = QL.oct;
+let dynScale = 1;                 // độ phân giải tự hạ khi máy yếu
 
 // ---------- renderer / cảnh
 const canvas = $('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: false, powerPreference: 'high-performance', stencil: false });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+if (MOBILE) renderer.shadowMap.autoUpdate = false;        // cập nhật bóng cách khung (đỡ một nửa công vẽ bóng)
 const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -45,7 +54,7 @@ L.spot.position.set(-1.05, 2.95, 1.35); L.spot.target.position.set(-0.17, 0.3, -
 L.rim.position.set(1.6, 1.8, -2.4);
 L.glow.position.set(1.25, 1.05, 0.55);
 for (const l of [L.key, L.spot]) {
-  l.castShadow = true; l.shadow.mapSize.set(2048, 2048); l.shadow.bias = -0.0004; l.shadow.normalBias = 0.01;
+  l.castShadow = !(MOBILE && l === L.key); l.shadow.mapSize.set(QL.shadow, QL.shadow); l.shadow.bias = -0.0004; l.shadow.normalBias = 0.01;
 }
 Object.assign(L.key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2, near: 0.5, far: 8 });
 L.spot.shadow.camera.near = 0.5; L.spot.shadow.camera.far = 8; L.spot.shadow.radius = 4;
@@ -97,7 +106,7 @@ function gradientBg(hex) {
 function applyDisplayCfg() {
   const d = cfg.display;
   const cine = (d.lighting || 'cinematic') === 'cinematic';
-  renderer.setPixelRatio((window.devicePixelRatio || 1) * (d.renderScale || 1));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QL.dprCap) * (d.renderScale || 1) * dynScale);
   resize();
   const k = d.keyLight ?? 1;
   L.hemi.intensity = cine ? 0.1 : 0.5;
@@ -120,7 +129,9 @@ function applyDisplayCfg() {
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
-  camera.aspect = w / h; camera.updateProjectionMatrix();
+  camera.aspect = w / h;
+  camera.zoom = Math.min(1, camera.aspect / (9 / 16));      // màn điện thoại dài hơn 9:16: giữ nguyên bề ngang khung hình
+  camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
 applyDisplayCfg();
@@ -153,6 +164,7 @@ if (machine.meta.cams) { Object.assign(DEFAULT_CAMS, machine.meta.cams); applyCa
   if (lt.rim) P(L.rim, lt.rim.pos);
   if (lt.glow) { P(L.glow, lt.glow.pos); if (lt.glow.dist) L.glow.distance = lt.glow.dist; } }
 const paper = new Paper(machine, { pxPerM: cfg.writer.paper?.pxPerM || 1600, inkColor: cfg.writer.paper?.inkColor || '#1d140c' });
+paper.renderer = renderer; renderer.shadowMap.needsUpdate = true;
 machine.attachPaper(paper, { tint: cfg.writer.paper?.tint || '#f3e6cc', grain: cfg.writer.paper?.grain ?? 1 });
 // cuộn giấy dùng cùng vân giấy
 {
@@ -251,7 +263,25 @@ function frame(dtIn) {
   if (!writer.busy && performance.now() - lastAsk > 400) pull();
   frames++; fpsT += raw; if (fpsT > 2) { api.send('display:fps', Math.round(frames / fpsT)); frames = 0; fpsT = 0; }
 }
-if (!window.__manual) renderer.setAnimationLoop(() => frame());
+// giới hạn khung hình + tự hạ độ phân giải khi điện thoại không theo kịp
+let lastF = 0, perfT = 0, perfN = 0, goodT = 0, shadowTick = 0;
+function loop(t) {
+  const panelOpen = !!window.__panelOpen;
+  const cap = panelOpen ? 15 : MOBILE ? (cfg.display.mobileFps || QL.fps) : 0;
+  if (cap && t - lastF < 1000 / cap - 2) return;
+  const realDt = lastF ? (t - lastF) / 1000 : 0; lastF = t;
+  if (MOBILE && ++shadowTick % 2 === 0) renderer.shadowMap.needsUpdate = true;
+  frame();
+  if (MOBILE && !panelOpen && cfg.display.adaptive !== false && realDt) {
+    perfT += realDt; perfN++;
+    if (perfT > 2) {
+      const fps = perfN / perfT, want = cap || 60; perfT = 0; perfN = 0;
+      if (fps < want * 0.82 && dynScale > 0.55) { dynScale = Math.max(0.55, dynScale - 0.12); applyDisplayCfg(); goodT = 0; }
+      else if (fps > want * 0.95 && dynScale < 1) { goodT += 2; if (goodT >= 8) { dynScale = Math.min(1, dynScale + 0.08); applyDisplayCfg(); goodT = 0; } }
+    }
+  }
+}
+if (!window.__manual) renderer.setAnimationLoop(loop);
 
 // tiện cho kiểm thử
 window.__sw = { machine, paper, writer, camera, controls, scene, renderer, G, b2t, applyCam, goCam, vbox, music,

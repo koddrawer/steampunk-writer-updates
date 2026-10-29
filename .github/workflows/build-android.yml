@@ -1,0 +1,48 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/build-android.yml']
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Cài thư viện
+        working-directory: mobile
+        run: npm ci --no-audit --no-fund
+      - name: Đóng gói web + đồng bộ Capacitor
+        working-directory: mobile
+        run: |
+          node tools/bundle.mjs
+          node tools/make-www.mjs
+          npx cap sync android
+      - name: Build APK
+        working-directory: mobile/android
+        run: |
+          export APK_CODE=$(node -p "require('../apk.json').code")
+          export APK_NAME=$(node -p "require('../apk.json').name")
+          echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          mkdir -p ../../dist-apk
+          cp app/build/outputs/apk/release/app-release.apk ../../dist-apk/SteampunkWriter-$APK_NAME.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SteampunkWriter-apk
+          path: dist-apk/*.apk
+      - name: Phát hành trên GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-v${{ env.APK_NAME }}
+          name: Steampunk Writer Android ${{ env.APK_NAME }}
+          body: Bản cài Android (APK). Tải file .apk bên dưới về điện thoại rồi mở để cài.
+          files: dist-apk/*.apk
+          make_latest: true

@@ -90,3 +90,18 @@ code { background: #120e0a; border: 1px solid var(--line); padding: 1px 5px; bor
 .gsec { margin-bottom: 14px; }
 .gadd { border-style: dashed; }
 .gwrap { flex: 1; overflow: auto; padding: 14px 16px; }
+
+/* ---- điện thoại (bản Android: bảng điều khiển là lớp phủ toàn màn hình) */
+html.mobile body { font-size: 15px; }
+html.mobile header { padding: 8px 10px; flex-wrap: wrap; gap: 6px; }
+html.mobile .hstat { flex-wrap: wrap; gap: 4px; }
+html.mobile .pill { font-size: 11px; padding: 3px 7px; }
+html.mobile nav { padding: 0 4px; }
+html.mobile nav button { padding: 12px 10px; }
+html.mobile main { padding: 10px; }
+html.mobile .grid, html.mobile .cats { grid-template-columns: 1fr; gap: 10px; }
+html.mobile .card { padding: 12px; }
+html.mobile .row { grid-template-columns: 1fr 1.3fr; gap: 8px; }
+html.mobile input[type=range] { height: 28px; }
+html.mobile button, html.mobile select, html.mobile input { min-height: 34px; }
+html.mobile .btns { flex-wrap: wrap; }

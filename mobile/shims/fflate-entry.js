@@ -1,0 +1,1 @@
+export { unzipSync } from 'fflate';
